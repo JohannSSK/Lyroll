@@ -19,3 +19,7 @@ A C program that plays MP3 audio with synchronized lyrics display. Parses LRC fi
 
 - Will include RayLib support for the lyrics
 - Currently takes .mp3 and .lcr files as arguments, only accepted from ?/Lyroll directory itself.
+
+
+- ## Usage:
+- ./main <lyrics_file.lcr> <mp3_file.mp3>
