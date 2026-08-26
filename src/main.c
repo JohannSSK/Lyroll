@@ -148,6 +148,55 @@ void FunctionWordsInLine(char* words[MAX_LINES][32], int wordsInLine[MAX_LINES],
     }
 }
 
+
+void calculateSeparations(int* wordsInLine, int* separation, int* length, int count) {
+
+    // Takes the number of words in each line and the length of the line (how many ms it will be playing for)
+    // divides them to find how long each words shall be appearing for
+
+    for (int i = 0; i < count - 1; i++) {
+        if (wordsInLine[i] == 0) {
+            wordsInLine[i] = 1;
+            continue;
+        }
+        separation[i] = length[i] / wordsInLine[i];
+        printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
+        printDebug("separation[%d]:%dms\n", i, separation[i]);
+    }
+}
+
+void newMilli(int* time, int count, int* separation, int* length, int* wordsInLine) {
+
+    // CRITICAL
+    // Creates a new table, with each word and when it should appear
+    // loops through all lines and all words for each line
+    // if the separation is 0 (shouldn't happen except if length =0? i don't remember why i added that but i had a reason)
+    // then it sets separation into the length, which will help the logic for the next functions
+    // time of the lyric is just the time where the previous one will apear, plus the separation value, this whole thing done wordsInLine times,
+    // meaning once for each word, which makes sense when we are talking about separation
+
+    memset(time, 0, sizeof(*time));
+    int i = 1;
+    int total = 1;
+    time[0] = 0;
+    while (i < count){
+        for (int j = 1; j <= wordsInLine[i]; j++) {
+            if (separation[i] == 0) {
+                separation[i] = length[i];
+            }
+            printDebug("separation[%d]:%d, j:%d\n", i,separation[i], j);
+            printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
+            time[total] = time[total-1] + separation[i];
+            printDebug("time[%d]:%dms\n", total, time[total]);
+            total++;
+        }
+        i++;
+    }
+
+
+
+}
+
 void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN]) {
     SetTraceLogLevel(LOG_NONE);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
@@ -155,6 +204,8 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
     //MaximizeWindow();
     SetTargetFPS(FPS);;
 
+
+    // Fixing font
     if (access("assets/fonts/roboto.ttf", F_OK) == 0) {
         printDebug("Font file exists\n");
     } else {
@@ -162,9 +213,10 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
     }
 
     Font font = LoadFontEx("assets/fonts/roboto.ttf", 128, NULL, 0);
-
-
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
+
+
+
 
     // Times = milli
     // Strings = lyric[count]
@@ -187,8 +239,7 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
     int wordsInLine[MAX_LINES];
     FunctionWordsInLine(words, wordsInLine, count, lyric);
 
-
-
+    // For Debugging
     for (int i = 0; i < count; i++) {
         for (int j = 0; j < wordsInLine[i]; j++) {
             printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
@@ -205,15 +256,7 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
 
 
     // Calculate separations
-    for (int i = 0; i < count - 1; i++) {
-        if (wordsInLine[i] == 0) {
-            wordsInLine[i] = 1;
-            continue;
-        }
-        separation[i] = length[i] / wordsInLine[i];
-        printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
-        printDebug("separation[%d]:%dms\n", i, separation[i]);
-    }
+    calculateSeparations(wordsInLine, separation, length, count);
 
     // Calculate total words
     int totalWords = 0;
@@ -223,31 +266,17 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
     printDebug("totalWords:%d\n", totalWords);
 
 
-    // make an update milli with new values
+
+    // make a new milli with new values
     int time[totalWords];
-    memset(time, 0, sizeof(time));
-    int i = 1;
-    int total = 1;
-    while (i < count){
-        for (int j = 1; j <= wordsInLine[i]; j++) {
-            if (separation[i] == 0) {
-                separation[i] = length[i];
-            }
-            printDebug("separation[%d]:%d, j:%d\n", i,separation[i], j);
-            printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
-            time[total] = time[total-1] + separation[i];
-            printDebug("time[%d]:%dms\n", total, time[total]);
-            total++;
-        }
-        i++;
-    }
+    newMilli(time,count,separation,length,wordsInLine);
 
 
 
 
 
     char buffer[MAX_LINE_LEN] = "";
-    int index = 0;
+    int index = 1;
     int previous = 0;
 
 
@@ -257,17 +286,25 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
 
         current = findCurrentLine(elapsed, count, milli);
 
+
+
+
         // timer for buffer reset using milli
         if (current != previous) {
             strcpy(buffer, "");
             previous = current;
             printDebug("buffer reset\n");
             index = 0;
+            if (wordsInLine[current] > 1) {
+                printDebug("buffer updated THE FIRST WORD IS: %s\n", words[current][0]);
+                strcat(buffer, words[current][0]);
+            }
+
         }
 
         //timer for buffer update
-        if (index < wordsInLine[current]){
-            int globalIndex =0;
+        if (index < wordsInLine[current]-1){
+            int globalIndex = 0;
             for (int k = 0; k < current; k++) {
                 globalIndex += wordsInLine[k];
             }
@@ -275,8 +312,8 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
 
 
             if (elapsed > time[globalIndex] ) {
-                if (index > 0) strcat(buffer, " ");
-                strcat(buffer, words[current][index]);
+                strcat(buffer, " ");
+                strcat(buffer, words[current][index+1]);
                 printDebug("buffer updated: %s\n", buffer);
                 index ++;
             }
