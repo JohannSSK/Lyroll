@@ -322,19 +322,28 @@ int main(int argc,char** args){
         return 1;
     }
 
+    chdir("assets/audio");
+    //print current directory
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+    printDebug("Current directory: %s\n", cwd);
+
     char* mp3_file = args[2];
     char* absolute_path = realpath(mp3_file, NULL);
     if (absolute_path == NULL) {
         perror("realpath failed");
         return 1;
     }
+    chdir("../..");
 
+    chdir("assets/lyrics");
     FILE* file = fopen(args[1], "r");
     if (file == NULL) {
         perror("fopen failed");
         return 1;
     }
 
+    chdir("../..");
     // initialize variables
     char line[MAX_LINES];
     int count = 0;
