@@ -7,7 +7,8 @@
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
-#define fps 60
+#define PROGRAM_NAME "Lyroll"
+#define FPS 10
 
 #define FONT_SIZE 60
 #define TEXT_SPACING 2
