@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <raylib.h>
+#include <string.h>
 #include "const.h"
 #include "functions.h"
 
@@ -93,10 +94,23 @@ int main(int argc,char** args){
 
 
 
+    // Specifies font
+    char* font = NULL;
+    for (int i = 3; i < argc; i++) {
+        if (strcmp(args[i], "--font") == 0) {
+            font = args[i + 1];
+            break;
+        }
+    }
+
+    if (font == NULL) {
+        font = "roboto.ttf";
+    }
+
 
     // Starting raylib window
 
-    MakeWindow(count,milli,lyric);
+    MakeWindow(count,milli,lyric,font);
 
 
 

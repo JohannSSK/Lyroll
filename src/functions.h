@@ -27,6 +27,6 @@ int findCurrentLine(long int elapsed, int count, long int* milli);
 void FunctionWordsInLine(char* words[MAX_LINES][32], int wordsInLine[MAX_LINES], int count, char lyric[MAX_LINES][MAX_LINE_LEN]);
 
 // GUI
-void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN]);
+void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font);
 
 #endif

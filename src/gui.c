@@ -4,23 +4,30 @@
 #include "const.h"
 #include "functions.h"
 
-void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN]) {
+
+void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font) {
     SetTraceLogLevel(LOG_NONE);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, PROGRAM_NAME);
     //MaximizeWindow();
     SetTargetFPS(FPS);;
 
-    if (access("assets/fonts/roboto.ttf", F_OK) == 0) {
-        printDebug("Font file exists\n");
-    } else {
-        printDebug("Font file NOT found\n");
+
+    chdir("assets/fonts/");
+
+    if (access(font, F_OK) != 0) {
+        printf("Font not found: %s\n", font);
+        exit(1);
     }
 
-    Font font = LoadFontEx("assets/fonts/roboto.ttf", 128, NULL, 0);
+    char* pathToFont = realpath(font, NULL);
+    printDebug("pathToFont:%s\n", pathToFont);
+    chdir("../../");
+
+    Font rayLibFont = LoadFontEx(pathToFont, 128, NULL, 0);
 
 
-    SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(rayLibFont.texture, TEXTURE_FILTER_BILINEAR);
 
     // Times = milli
     // Strings = lyric[count]
@@ -114,31 +121,34 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
         current = findCurrentLine(elapsed, count, milli);
 
         // timer for buffer reset using milli
-        if (current != previous) {
-            strcpy(buffer, "");
-            previous = current;
-            printDebug("buffer reset\n");
-            index = 0;
-        }
+               if (current != previous) {
+                   strcpy(buffer, "");
+                   previous = current;
+                   printDebug("buffer reset\n");
+                   index = 0;
+                   if (wordsInLine[current] > 1) {
+                       printDebug("buffer updated THE FIRST WORD IS: %s\n", words[current][0]);
+                       strcat(buffer, words[current][0]);
+                   }
 
-        //timer for buffer update
-        if (index < wordsInLine[current]){
-            int globalIndex =0;
-            for (int k = 0; k < current; k++) {
-                globalIndex += wordsInLine[k];
-            }
-            globalIndex += index;
+               }
 
-
-            if (elapsed > time[globalIndex] ) {
-                if (index > 0) strcat(buffer, " ");
-                strcat(buffer, words[current][index]);
-                printDebug("buffer updated: %s\n", buffer);
-                index ++;
-            }
-        }
+               //timer for buffer update
+               if (index < wordsInLine[current]){
+                   int globalIndex = 0;
+                   for (int k = 0; k < current; k++) {
+                       globalIndex += wordsInLine[k];
+                   }
+                   globalIndex += index;
 
 
+                   if (elapsed > time[globalIndex] ) {
+                       strcat(buffer, " ");
+                       strcat(buffer, words[current][index+1]);
+                       printDebug("buffer updated: %s\n", buffer);
+                       index ++;
+                   }
+               }
 
 
 
@@ -153,7 +163,7 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN])
 
 
 
-            DrawTextEx(font, buffer, (Vector2){100, 400}, 120, 2, BLACK);
+            DrawTextEx(rayLibFont, buffer, (Vector2){100, 400}, 120, 2, BLACK);
            //
         EndDrawing();
 
