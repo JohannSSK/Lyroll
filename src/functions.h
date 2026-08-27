@@ -10,10 +10,13 @@
 int initMusic(char* absolute_path);
 
 
-// Preparing lyrics and timings
-void stats(FILE* file,char* line, char* id, char* artist, char* album, char* title, char* length);
+// Preparing files, lyrics and timings
 
-void extractLyrics(FILE* file, char lyric[MAX_LINES][MAX_LINE_LEN], char* line, int* count, int* minutes, float* seconds);
+int checkIfFilesAreValid(int argumentCount, char* lyricsFile, char* mp3File, char* pathToLyricsFile, char* pathToMp3File);
+
+void stats(FILE* file, char* id, char* artist, char* album, char* title, char* length);
+
+void extractLyrics(FILE* file, char lyric[MAX_LINES][MAX_LINE_LEN], int* count, int* minutes, float* seconds);
 
 void lyricsMilli(long int* milli, int* minutes, float* seconds, int* count);
 

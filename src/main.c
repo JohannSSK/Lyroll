@@ -12,9 +12,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <raylib.h>
-#include <stdlib.h>
 #include "const.h"
-#include <string.h>
 #include "functions.h"
 
 
@@ -22,39 +20,29 @@ int main(int argc,char** args){
 
 
     // Going back one directory, from src to the main
-    // TODO REMOVE THAT. Make it independent of where it runs from, assuming constant main file
     chdir("..");
 
-    if (argc != 3) {
-        printf("Usage: %s <lyrics_file> <mp3_file>\n", args[0]);
-        return 1;
-    }
 
-    chdir("assets/audio");
     //print current directory
     char cwd[1024];
     getcwd(cwd, sizeof(cwd));
     printDebug("Current directory: %s\n", cwd);
 
-    char* mp3_file = args[2];
-    char* absolute_path = realpath(mp3_file, NULL);
-    if (absolute_path == NULL) {
-        perror("realpath failed");
-        return 1;
-    }
-    chdir("../..");
+    // calling the function to check if all files are valid
+    int shouldProgramexit;
+    char pathToLyricsFile[MAX_STR_LEN];
+    char pathToMp3File[MAX_STR_LEN];
 
-    chdir("assets/lyrics");
-    FILE* file = fopen(args[1], "r");
-    if (file == NULL) {
-        perror("fopen failed");
+    shouldProgramexit = checkIfFilesAreValid(argc, args[1], args[2], pathToLyricsFile, pathToMp3File);
+    if (shouldProgramexit) {
         return 1;
     }
 
-    chdir("../..");
+    FILE* lyricsFile = fopen(pathToLyricsFile, "r");
+
+
     // initialize variables
-    char line[MAX_LINES];
-    int count = 0;
+    int count = 0; // Amount of lines in LyricsFile
     int minutes[MAX_LINES];
     char lyric[MAX_LINES][MAX_LINE_LEN];
     float seconds[MAX_LINES];
@@ -67,14 +55,14 @@ int main(int argc,char** args){
 
 
     printDebug("Starting stats function...\n");
-    stats(file, line, id, artist, album, title, length);
+    stats(lyricsFile, id, artist, album, title, length);
     printDebug("Stats function returned successfully!\n");
 
     printDebug("Starting extractLyrics function...\n");
-    extractLyrics(file, lyric, line, &count, minutes, seconds);
+    extractLyrics(lyricsFile, lyric, &count, minutes, seconds);
     printDebug("extractLyrics function returned successfully!\n");
 
-    fclose(file);
+    fclose(lyricsFile);
 
 
 
@@ -98,7 +86,7 @@ int main(int argc,char** args){
 
 
     printDebug("Starting music player...\n");
-    int pid = initMusic(absolute_path);
+    int pid = initMusic(pathToMp3File);
     printDebug("Music player started successfully!\n");
 
 
@@ -117,7 +105,6 @@ int main(int argc,char** args){
     printDebug("Cleaning up...\n");
 
     kill(pid, SIGTERM);
-    free(absolute_path);
 
     printDebug("Exiting.\n");
 

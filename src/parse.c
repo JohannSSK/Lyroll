@@ -1,11 +1,66 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "functions.h"
 
-void stats(FILE* file,char* line, char* id, char* artist, char* album, char* title, char* length){
+int checkIfFilesAreValid(int argumentCount, char* lyricsFile, char* mp3File, char* pathToLyricsFile, char* pathToMp3File) {
+
+    if (argumentCount < 3) {
+        printf("Usage: %s <lyrics_file> <mp3_file>\n", PROGRAM_NAME);
+        return 1;
+    }
+
+    //.mp3 handling
+    chdir("assets/audio");
+    if (access(mp3File, F_OK) != 0) {
+        printf("Audio file does not exist\n");
+        return 1;
+    }
+
+    if (strstr(mp3File, ".mp3")==NULL) {
+        printf("Your second argument must be a valid .mp3 file");
+        printf("Usage: %s <lyrics_file> <mp3_file>\n", PROGRAM_NAME);
+        return 1;
+    }
+    char *fakepathToMp3File = realpath(mp3File, NULL);
+    if (fakepathToMp3File == NULL) {
+        perror("realpath failed");
+        return 1;
+    }
+    strcpy(pathToMp3File, fakepathToMp3File);
+    free(fakepathToMp3File);
+    chdir("../..");
+
+    //.lcr handling
+    chdir("assets/lyrics");
+    if (access(lyricsFile, F_OK) != 0) {
+        printf("Lyrics file does not exist\n");
+        return 1;
+    }
+
+    if (strstr(lyricsFile, ".lrc") == NULL) {
+        printf("Your first argument must be a valid .lcr file");
+        printf("Usage: %s <lyrics_file> <mp3_file>\n", PROGRAM_NAME);
+        return 1;
+    }
+
+    char* fakepathToLyricsFile = realpath(lyricsFile, NULL);
+    if (fakepathToLyricsFile == NULL) {
+        perror("realpath failed");
+        return 1;
+    }
+    strcpy(pathToLyricsFile, fakepathToLyricsFile);
+    free(fakepathToLyricsFile);
+
+    chdir("../..");
+    return 0;
+}
+
+void stats(FILE* file, char* id, char* artist, char* album, char* title, char* length){
 
     // Get stats
     printDebug("Gettings stats...\n");
+    char line[MAX_LINE_LEN];
 
     fgets(line, (MAX_LINE_LEN), file);
     sscanf(line, "[id: %[^]]]", id);
@@ -35,10 +90,11 @@ void stats(FILE* file,char* line, char* id, char* artist, char* album, char* tit
 }
 
 
-void extractLyrics(FILE* file, char lyric[MAX_LINES][MAX_LINE_LEN], char* line, int* count, int* minutes, float* seconds){
+void extractLyrics(FILE* file, char lyric[MAX_LINES][MAX_LINE_LEN], int* count, int* minutes, float* seconds){
 
     // Get the lyrics and store them, sscanf() not scanf()!!
     printDebug("Extracting lyrics...\n");
+    char line[MAX_LINE_LEN];
 
     while (fgets(line, (MAX_LINE_LEN), file)) {
         (*count)++;
