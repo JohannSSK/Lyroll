@@ -110,7 +110,19 @@ int main(int argc,char** args){
 
     // Starting raylib window
 
-    MakeWindow(count,milli,lyric,font);
+
+    int realTime = 1;
+    for (int i = 3; i < argc; i++) {
+        if (strcmp(args[i], "--real-time-off") == 0) {
+            realTime = 0;
+        }
+    }
+
+    if (realTime) {
+        MakeWindowRealTime(count, milli, lyric, font);
+    } else {
+        MakeWindowStatic(count, milli, lyric, font);
+    }
 
 
 

@@ -17,6 +17,8 @@
 #define AUDIO_PLAYER_NAME "mpg123"
 #define QUIET_FLAG "-q"
 
+#define REAL_TIME_WORDS_MODE 0
+
 #define DEBUG 1
 
 #if DEBUG

@@ -4,13 +4,7 @@
 #include "const.h"
 #include "functions.h"
 
-
-void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font) {
-    SetTraceLogLevel(LOG_NONE);
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, PROGRAM_NAME);
-    //MaximizeWindow();
-    SetTargetFPS(FPS);;
+Font handleFont(char* font) {
 
 
     chdir("assets/fonts/");
@@ -23,21 +17,60 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN],
     char* pathToFont = realpath(font, NULL);
     printDebug("pathToFont:%s\n", pathToFont);
     chdir("../../");
+     Font rayLibFont = LoadFontEx(pathToFont, 128, NULL, 0);
+     SetTextureFilter(rayLibFont.texture, TEXTURE_FILTER_BILINEAR);
 
-    Font rayLibFont = LoadFontEx(pathToFont, 128, NULL, 0);
+    return rayLibFont;
+
+}
+
+int* calculateSeparations(int* wordsInLine, int count, int* length) {
+
+    int* separation = calloc(count, sizeof(int));
+
+    for (int i = 0; i < count - 1; i++) {
+        if (wordsInLine[i] == 0) {
+            wordsInLine[i] = 1;
+            continue;
+        }
+        separation[i] = length[i] / wordsInLine[i];
+        printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
+        printDebug("separation[%d]:%dms\n", i, separation[i]);
+
+    }
+    return separation;
+}
+
+void initializeWindow(void){
+
+    SetTraceLogLevel(LOG_NONE);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, PROGRAM_NAME);
+    MaximizeWindow();
+    SetTargetFPS(FPS);;
 
 
-    SetTextureFilter(rayLibFont.texture, TEXTURE_FILTER_BILINEAR);
 
-    // Times = milli
-    // Strings = lyric[count]
+}
+
+void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font) {
+
+
+    //Initializes window
+    initializeWindow();
+
+
+    // Finds font and returns it to be used for prints
+    Font rayLibFont = handleFont(font);
+
+
 
     double startTime = GetTime(); // Starting time of the window
     int current = 0; // Current line we are at
     int length[MAX_LINES]; // length of each line in milliseconds
-    int separation[MAX_LINES]; // Determines how long each words will appear for.
+    int* separation = NULL; // Determines how long each words will appear for.
 
-    // Calculate length for each line
+    // Calculate how long each line will be appearing for in ms
     for (int i = 0; i < count-1; i++) {
         length[i] = milli[i+1] - milli[i];
         printDebug("milli[%d]:%lds\n", i, milli[i]);
@@ -46,12 +79,12 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN],
 
     //Calculate how many words are in each line
 
-    char* words[MAX_LINES][32];
-    int wordsInLine[MAX_LINES];
+    char* words[MAX_LINES][32]; //  will contain all words in all lyrisc
+    int wordsInLine[MAX_LINES]; //  How many words in each lyric
     FunctionWordsInLine(words, wordsInLine, count, lyric);
 
 
-
+    // Debugging
     for (int i = 0; i < count; i++) {
         for (int j = 0; j < wordsInLine[i]; j++) {
             printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
@@ -61,22 +94,12 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN],
     }
 
 
+
+
     printDebug("Calculating separations...");
 
-
-
-
-
     // Calculate separations
-    for (int i = 0; i < count - 1; i++) {
-        if (wordsInLine[i] == 0) {
-            wordsInLine[i] = 1;
-            continue;
-        }
-        separation[i] = length[i] / wordsInLine[i];
-        printDebug("wordsInLine[%d]:%d\n", i, wordsInLine[i]);
-        printDebug("separation[%d]:%dms\n", i, separation[i]);
-    }
+    separation = calculateSeparations(wordsInLine,count,length);
 
     // Calculate total words
     int totalWords = 0;
@@ -86,7 +109,7 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN],
     printDebug("totalWords:%d\n", totalWords);
 
 
-    // make an update milli with new values
+    // make an update milli with new values with the words in between.
     int time[totalWords];
     memset(time, 0, sizeof(time));
     int i = 1;
@@ -115,6 +138,8 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN],
 
 
     while (!WindowShouldClose()){
+
+        // calculates current time in ms since window opened
         double elapsed = (GetTime() - startTime) * 1000;
         printDebug("current time:%dms \n", (int)elapsed);
 
@@ -155,21 +180,67 @@ void MakeWindow(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN],
 
         printDebug("buffer:%s\n", buffer);
 
+
+
         BeginDrawing();
         ClearBackground(RAYWHITE);
 
-
-
-
-
-
             DrawTextEx(rayLibFont, buffer, (Vector2){100, 400}, 120, 2, BLACK);
-           //
+
         EndDrawing();
 
 
     }
+
+    //Cleaning up
+    free(separation);
     CloseWindow();
 
 
+}
+
+
+
+
+void MakeWindowStatic(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font) {
+
+
+    //Initializes window
+    initializeWindow();
+
+
+    // Finds font and returns it to be used for prints
+    Font rayLibFont = handleFont(font);
+
+
+
+    double startTime = GetTime(); // Starting time of the window
+    int current = 0; // Current line we are at
+
+    char buffer[MAX_LINE_LEN] = "";
+
+
+    while (!WindowShouldClose()){
+
+        // calculates current time in ms since window opened
+        double elapsed = (GetTime() - startTime) * 1000;
+        printDebug("current time:%dms \n", (int)elapsed);
+
+        current = findCurrentLine(elapsed, count, milli);
+
+        strcpy(buffer, lyric[current]);
+
+
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+
+            DrawTextEx(rayLibFont, buffer, (Vector2){100, 400}, 120, 2, BLACK);
+
+        EndDrawing();
+
+
+    }
+
+    //Cleaning up
+    CloseWindow();
 }
