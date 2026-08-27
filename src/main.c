@@ -15,15 +15,14 @@
 #include <string.h>
 #include "const.h"
 #include "functions.h"
+#include <libgen.h>
 
 
 int main(int argc,char** args){
 
 
-    // Going back one directory, from src to the main
-    chdir("..");
 
-
+    chdir("/opt/Lyroll");
     //print current directory
     char cwd[1024];
     getcwd(cwd, sizeof(cwd));
@@ -131,7 +130,7 @@ int main(int argc,char** args){
     printDebug("Cleaning up...\n");
 
     kill(pid, SIGTERM);
-
+    system("stty sane");  // Restore terminal
     printDebug("Exiting.\n");
 
     return 0;

@@ -64,5 +64,11 @@ clean:
 	rm -rf build bin
 	@echo "Cleaned up unneeded directories."
 
+#	makes "make install" after make, copy the executable to /usr/local/bin, so we can run it from anywhere
+install: $(TARGET)
+	sudo mkdir -p /opt
+	sudo cp -r ../Lyroll /opt/
+	sudo ln -sf /opt/Lyroll/bin/lyroll /usr/local/bin/lyroll
+
 #   required for compiler to know that all and clean are arguments, not file names
-.PHONY: all clean
+.PHONY: all clean install
