@@ -4,6 +4,19 @@
 #include "const.h"
 #include "functions.h"
 
+
+
+#define COLOR_GRADIENT_TOP (Color){22, 22, 30, 255}
+#define COLOR_GRADIENT_BOTTOM (Color){22, 22, 30, 255}
+#define COLOR_TEXT (Color){255, 255, 255, 255}
+#define COLOR_TEXT_DIM (Color){160, 160, 175, 255}
+#define COLOR_PROGRESS_BG (Color){40, 40, 52, 255}
+#define COLOR_PROGRESS_FG (Color){80, 160, 255, 255}
+#define COLOR_ACCENT (Color){130, 130, 200, 255}
+
+
+
+
 Font handleFont(char* font) {
 
 
@@ -17,7 +30,7 @@ Font handleFont(char* font) {
     char* pathToFont = realpath(font, NULL);
     printDebug("pathToFont:%s\n", pathToFont);
     chdir("../../");
-     Font rayLibFont = LoadFontEx(pathToFont, 128, NULL, 0);
+     Font rayLibFont = LoadFontEx(pathToFont, 200, NULL, 0);
      SetTextureFilter(rayLibFont.texture, TEXTURE_FILTER_BILINEAR);
 
     return rayLibFont;
@@ -31,6 +44,7 @@ int* calculateSeparations(int* wordsInLine, int count, int* length) {
     for (int i = 0; i < count - 1; i++) {
         if (wordsInLine[i] == 0) {
             wordsInLine[i] = 1;
+            separation[i] = length[i];
             continue;
         }
         separation[i] = length[i] / wordsInLine[i];
@@ -53,7 +67,51 @@ void initializeWindow(void){
 
 }
 
-void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font) {
+
+void Styling(int width, int height, Font rayLibFont, char* buffer) {
+
+    DrawRectangleGradientV(0, 0, width, height, COLOR_GRADIENT_TOP, COLOR_GRADIENT_BOTTOM);
+
+    if (strcmp(buffer, "") == 0) return;
+
+    int size = 200;
+    double maxsize = width*0.8;
+    Vector2 textSize = MeasureTextEx(rayLibFont, buffer, size, 1);
+    while (textSize.x > maxsize) {
+        size -= 10;
+        textSize = MeasureTextEx(rayLibFont, buffer, size, 1);
+    }
+
+    Vector2 position = {width/2.0 - textSize.x/2, height/2.0 - textSize.y/2};
+
+    DrawTextEx(rayLibFont, buffer, position, size, 1, COLOR_TEXT);
+
+
+}
+
+void progresBar(int width, int height, int elapsed, char* total) {
+
+
+    int minutes, seconds;
+
+
+    sscanf(total, "%d:%d", &minutes, &seconds);
+
+    long int totalMilliseconds = minutes * 60000 + seconds * 1000;
+    int progress = (int)((double)elapsed / totalMilliseconds * 100);
+
+
+
+    Rectangle progressBarBackground = {100, height - 100, width - 200, 10};
+    Rectangle progressBarForeground = {100, height - 100, (width-200) * progress / 100, 10};
+
+    DrawRectangleRounded(progressBarBackground, 0.3, 10, COLOR_PROGRESS_BG);
+    DrawRectangleRounded(progressBarForeground, 0.3, 10, COLOR_PROGRESS_FG);
+
+}
+
+void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font, char* totalLength) {
+
 
 
     //Initializes window
@@ -103,19 +161,28 @@ void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LI
 
     // Calculate total words
     int totalWords = 0;
-    for (int i = 0; i < count - 1; i++) {
+    for (int i = 0; i < count; i++) {
         totalWords += wordsInLine[i];
     }
-    printDebug("totalWords:%d\n", totalWords);
+
+
+    printDebug("It's not crashing now");
+    fflush(stdout);
+    printDebug("totalLength ITS HEREEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE: %s\n", totalLength);
+    fflush(stdout);
+
 
 
     // make an update milli with new values with the words in between.
     int time[totalWords];
+    printDebug("time:%d\n", totalWords);
     memset(time, 0, sizeof(time));
     int i = 1;
     int total = 1;
     while (i < count){
+        printDebug("i:%d\n", i);
         for (int j = 1; j <= wordsInLine[i]; j++) {
+            printDebug("j:%d\n", j);
             if (separation[i] == 0) {
                 separation[i] = length[i];
             }
@@ -124,13 +191,16 @@ void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LI
             time[total] = time[total-1] + separation[i];
             printDebug("time[%d]:%dms\n", total, time[total]);
             total++;
+            printDebug("total:%d\n", total);
+            printDebug("totalWords:%d\n", totalWords);
         }
         i++;
     }
 
-
-
-
+    printDebug("It's probably going to crash now!!!!!!!!!!");
+    fflush(stdout);
+    printDebug("totalLength ITS HEREEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE: %s\n", totalLength);
+    fflush(stdout);
 
     char buffer[MAX_LINE_LEN] = "";
     int index = 0;
@@ -138,12 +208,14 @@ void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LI
 
 
     while (!WindowShouldClose()){
-
         // calculates current time in ms since window opened
         double elapsed = (GetTime() - startTime) * 1000;
         printDebug("current time:%dms \n", (int)elapsed);
 
         current = findCurrentLine(elapsed, count, milli);
+
+
+
 
         // timer for buffer reset using milli
                if (current != previous) {
@@ -151,7 +223,10 @@ void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LI
                    previous = current;
                    printDebug("buffer reset\n");
                    index = 0;
+
+
                    if (wordsInLine[current] > 1) {
+
                        printDebug("buffer updated THE FIRST WORD IS: %s\n", words[current][0]);
                        strcat(buffer, words[current][0]);
                    }
@@ -159,7 +234,10 @@ void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LI
                }
 
                //timer for buffer update
-               if (index < wordsInLine[current]){
+
+
+
+               if (index < wordsInLine[current]-1){
                    int globalIndex = 0;
                    for (int k = 0; k < current; k++) {
                        globalIndex += wordsInLine[k];
@@ -176,16 +254,16 @@ void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LI
                }
 
 
-
-
-        printDebug("buffer:%s\n", buffer);
-
-
-
         BeginDrawing();
         ClearBackground(RAYWHITE);
 
-            DrawTextEx(rayLibFont, buffer, (Vector2){100, 400}, 120, 2, BLACK);
+
+
+            Styling(GetScreenWidth(),GetScreenHeight(),rayLibFont,buffer);
+
+
+            progresBar(GetScreenWidth(), GetScreenHeight(), elapsed, totalLength);
+
 
         EndDrawing();
 
@@ -202,7 +280,7 @@ void MakeWindowRealTime(int count, long int* milli, char lyric[MAX_LINES][MAX_LI
 
 
 
-void MakeWindowStatic(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font) {
+void MakeWindowStatic(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE_LEN], char* font, char* totalLength) {
 
 
     //Initializes window
@@ -234,7 +312,8 @@ void MakeWindowStatic(int count, long int* milli, char lyric[MAX_LINES][MAX_LINE
         BeginDrawing();
         ClearBackground(RAYWHITE);
 
-            DrawTextEx(rayLibFont, buffer, (Vector2){100, 400}, 120, 2, BLACK);
+            Styling(GetScreenWidth(),GetScreenHeight(),rayLibFont,buffer);
+            progresBar(GetScreenWidth(), GetScreenHeight(), elapsed, totalLength);
 
         EndDrawing();
 

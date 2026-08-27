@@ -17,7 +17,6 @@
 #include "functions.h"
 #include <libgen.h>
 
-
 int main(int argc,char** args){
 
 
@@ -118,9 +117,12 @@ int main(int argc,char** args){
     }
 
     if (realTime) {
-        MakeWindowRealTime(count, milli, lyric, font);
+
+        printDebug("IM STILL RIGHT HERE");
+        printDebug("realTime: %s\n", length);
+        MakeWindowRealTime(count, milli, lyric, font, length);
     } else {
-        MakeWindowStatic(count, milli, lyric, font);
+        MakeWindowStatic(count, milli, lyric, font, length);
     }
 
 

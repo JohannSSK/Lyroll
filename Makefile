@@ -70,5 +70,5 @@ install: $(TARGET)
 	sudo cp -r ../Lyroll /opt/
 	sudo ln -sf /opt/Lyroll/bin/lyroll /usr/local/bin/lyroll
 
-#   required for compiler to know that all and clean are arguments, not file names
+#   required for compiler to know that all, install and clean are arguments, not file names
 .PHONY: all clean install

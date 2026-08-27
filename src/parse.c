@@ -138,8 +138,8 @@ void FunctionWordsInLine(char* words[MAX_LINES][32], int wordsInLine[MAX_LINES],
     for (int i = 0; i < count; i++) {
         strcpy(copy[i], lyric[i]);
 
-        if (copy[i][0] == ' ') {
-            wordsInLine[i] = 1;
+        if (copy[i][0] == ' ' || copy[i][0] == '\0') {
+            wordsInLine[i] = 0;
             continue;
         }
 
