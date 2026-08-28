@@ -1,139 +1,46 @@
-#include <sched.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <fcntl.h>
-#include <pthread.h>
-#include <dirent.h>
-#include <signal.h>
-#include <dlfcn.h>
-#include <sys/mman.h>
-#include <raylib.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
-#include "const.h"
-#include "functions.h"
-#include <libgen.h>
-
-int main(int argc,char** args){
-
-
-
-    chdir("/opt/Lyroll");
-    //print current directory
-    char cwd[1024];
-    getcwd(cwd, sizeof(cwd));
-    printDebug("Current directory: %s\n", cwd);
-
-    // calling the function to check if all files are valid
-    int shouldProgramexit;
-    char pathToLyricsFile[MAX_STR_LEN];
-    char pathToMp3File[MAX_STR_LEN];
-
-    shouldProgramexit = checkIfFilesAreValid(argc, args[1], args[2], pathToLyricsFile, pathToMp3File);
-    if (shouldProgramexit) {
-        return 1;
-    }
-
-    FILE* lyricsFile = fopen(pathToLyricsFile, "r");
-
-
-    // initialize variables
-    int count = 0; // Amount of lines in LyricsFile
-    int minutes[MAX_LINES];
-    char lyric[MAX_LINES][MAX_LINE_LEN];
-    float seconds[MAX_LINES];
-
-    char id[MAX_STR_LEN];
-    char artist[MAX_STR_LEN];
-    char title[MAX_STR_LEN];
-    char album[MAX_STR_LEN];
-    char length[MAX_STR_LEN];
-
-
-    printDebug("Starting stats function...\n");
-    stats(lyricsFile, id, artist, album, title, length);
-    printDebug("Stats function returned successfully!\n");
-
-    printDebug("Starting extractLyrics function...\n");
-    extractLyrics(lyricsFile, lyric, &count, minutes, seconds);
-    printDebug("extractLyrics function returned successfully!\n");
-
-    fclose(lyricsFile);
+#include <unistd.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include "../includes/gui.h"
 
 
 
+void Usage() {
+    printf("Usage: ");
+}
 
-    // Initialize milliseconds and lyric arrays
-    long int milli[256];
-
-    lyric[0][0] = ' ';
-
-    long int difference[count];
-
-    printDebug("Calculating millisecond timestamps...\n");
-
-    lyricsMilli(milli, minutes, seconds, &count);
-
-    printDebug("Millisecond timestamps calculated successfully!\n");
-
-    for (int i = 0; i < count; i++) {
-        printDebug("%ldms\n", milli[i]);
-    }
+int main(int argc, char** args){
 
 
-    printDebug("Starting music player...\n");
-    int pid = initMusic(pathToMp3File);
-    printDebug("Music player started successfully!\n");
-
-
-
-
-
-    // Specifies font
-    char* font = NULL;
-    for (int i = 3; i < argc; i++) {
-        if (strcmp(args[i], "--font") == 0) {
-            font = args[i + 1];
-            break;
+    // Default font is roboto, if user has specified a different font with --font flag, it uses that. handlefont() will check whether that font exists at all
+    char* font = "roboto.ttf";
+    if (argc>3) {
+        for (int i = 3; i < argc-1; i++) {
+            if (strcmp(args[i], "--font") == 0) {
+                font = args[i+1];
+                break;
+            }
         }
     }
 
-    if (font == NULL) {
-        font = "roboto.ttf";
+
+    // Start menu window, continuestatus is what state the user decided in the menu window
+    int ContinueStatus = StartMenuWindow(font);
+
+    if (ContinueStatus == 2) {
+        exit(0);
     }
 
-
-    // Starting raylib window
-
-
-    int realTime = 1;
-    for (int i = 3; i < argc; i++) {
-        if (strcmp(args[i], "--real-time-off") == 0) {
-            realTime = 0;
-        }
+    bool DynamicStatus = false;
+    // We hand startsongwindow the font and arguments and it will check whether the songs exist and start a series of parsing and the audio player
+    // We just have to check if there are 2 arguments so it doesn't crash
+    if (ContinueStatus == 0 && argc > 2) {
+        StartSongWindow(font, args[1], args[2], DynamicStatus);
+    } else if (ContinueStatus == 0 && argc <= 2) {
+        exit(1);
+        Usage();
     }
-
-    if (realTime) {
-
-        printDebug("IM STILL RIGHT HERE");
-        printDebug("realTime: %s\n", length);
-        MakeWindowRealTime(count, milli, lyric, font, length);
-    } else {
-        MakeWindowStatic(count, milli, lyric, font, length);
-    }
-
-
-
-    printDebug("Lyrics played successfully!\n");
-
-    printDebug("Cleaning up...\n");
-
-    kill(pid, SIGTERM);
-    system("stty sane");  // Restore terminal
-    printDebug("Exiting.\n");
-
-    return 0;
 }
