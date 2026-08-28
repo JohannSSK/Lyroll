@@ -1,4 +1,9 @@
+#include <stdio.h>
+
+
 #include "../includes/gui.h"
+#include "../includes/audioNlyrics.h"
+#include "../includes/const.h"
 #include "raylib.h"
 
 int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicStatus) {
@@ -20,9 +25,9 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
     }
 
     // This function tells us how many lines are in the whole song, 0 IS COUNTED AS A NUMBER, so it returns lines-1 in human numbers
-    int TotalLines = CountLines(LyricsPath);
+    int TotalLinesHuman = CountLines(LyricsPath);
     // This function takes in the lyrics lines themselves, whole sentences
-    char* LyricsLines[MAX_LINES] = SeparateLyricsLines(LyricsPath, TotalLines);
+    char* LyricsLines[MAX_LINES] = SeparateLyricsLines(LyricsPath, TotalLinesHuman);
     // This Function will find the lyrics we want and put it's timestamps in ms in LineResetTimeStamps
     long int LineResetTimeStamps[MAX_LINES] = SeparateTimeStamps(LyricsPath, LyricsLines); // 0 if line doesn't have
     // This function returns the song duration from the file
@@ -31,7 +36,7 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
     // This function calculates how long each line will be showing up for, again in ms
     int LineTimeLengths[MAX_LINES] = CalculateLineTimeLengths(LineResetTimeStamps);
     long int ShouldBeTotalTime = 0;
-    for (int i = 0; i < TotalLines; i++) {
+    for (int i = 0; i < TotalLinesHuman; i++) {
         ShouldBeTotalTime += LineTimeLengths[i];
     }
     if (ShouldBeTotalTime != TotalTime) {
@@ -45,31 +50,31 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
 
 
         // This function will take the words and just counts them for each line
-        // Will return 0 if there are no words
-        int WordsPerLine[MAX_LINES];
-        for (int i = 0; i < TotalLines; i++) {
-            WordsPerLine[i] = CalculateWordsPerLine(LyricsLines[i]);
+        // Will return 0 if there are no words, or even if the line is a space
+        int WordsPerLineHuman[MAX_LINES];
+        for (int i = 0; i < TotalLinesHuman; i++) {
+            WordsPerLineHuman[i] = CalculateWordsPerLineHuman(LyricsLines[i]);
         }
 
 
         // This function takes the sentences we mentioned earlier and separates them into words
         // Should return NULL when there are no more words to separate
         char* WordsOfEachLine[MAX_LINES][MAX_WORDS_PER_LINE];
-        for (int i = 0; i < TotalLines; i++) {
-            if (WordsPerLine[i] == 0) {
+        for (int i = 0; i < TotalLinesHuman; i++) {
+            if (WordsPerLineHuman[i] == 0) {
                 WordsOfEachLine[i][0] = NULL;
                 continue;
             }
-            for (int j = 0; j < WordsPerLine[i]; j++) {
-                WordsOfEachLine[i][j] = SeparateWords();
+            for (int j = 0; j < WordsPerLineHuman[i]; j++) {
+                WordsOfEachLine[i][j] = SeparateWords(LyricsPath, i, j);
             }
         }
 
         // This takes the words, and gives each word an ms value based on the letters in it.
         // Could be NULL, Returns 0 if so
         int WordTimeValues[MAX_LINES][MAX_WORDS_PER_LINE];
-        for (int i = 0; i < TotalLines; i++) {
-            for (int j = 0; j < WordsPerLine[i]; j++) {
+        for (int i = 0; i < TotalLinesHuman; i++) {
+            for (int j = 0; j < WordsPerLineHuman[i]; j++) {
                 if (WordsOfEachLine[i][0] == NULL) {
                     WordTimeValues[i][j] = LineTimeLengths[i]; // if word is NULL, set to line time length
                     continue;
@@ -81,17 +86,17 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
         // Here we handle any errors that may occur if the line stays for less than the calculate word time values function counted, so we call shrink word time values which
         // shrinks them linearly until they fit it in the time they are supposed to
         int SumOfValues = 0;
-        for (int i = 0; i < TotalLines; i++) {
+        for (int i = 0; i < TotalLinesHuman; i++) {
             SumOfValues = 0;
-            for (int j = 0; j < WordsPerLine[i]; j++) {
+            for (int j = 0; j < WordsPerLineHuman[i]; j++) {
                 SumOfValues += WordTimeValues[i][j];
             }
             if (SumOfValues > LineTimeLengths[i]) {
-                ShrinkWordTimeValues(WordTimeValues[i], WordsPerLine[i], LineTimeLengths[i]);
+                ShrinkWordTimeValues(WordTimeValues[i], WordsPerLineHuman[i], LineTimeLengths[i]);
             }
 
-
-            for (int j = 0; j < WordsPerLine[i]; j++) {
+            SumOfValues = 0;
+            for (int j = 0; j < WordsPerLineHuman[i]; j++) {
                 SumOfValues += WordTimeValues[i][j];
             }
             if (SumOfValues > LineTimeLengths[i]) {
@@ -104,7 +109,11 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
         //Assume we have 3 words, first one shall stay for 200ms second for 300ms and third for 400ms, but the lyric itself stays for 3 whole seconds,
         //We obviously have a gap, we don't want the lyrics to go out of sync with the audio, so we make the third word stay for 3 seconds - the remaining 200ms and 300ms
         // As we said, it's better for lyrics to appear before they are said, than after
-            FillLineGap(WordTimeValues[i], WordsPerLine[i], LineTimeLengths[i]);
+            FillLineGap(WordTimeValues[i], WordsPerLineHuman[i], LineTimeLengths[i]);
+            SumOfValues = 0;
+            for (int j = 0; j < WordsPerLineHuman[i]; j++) {
+                SumOfValues += WordTimeValues[i][j];
+            }
             if (SumOfValues < LineTimeLengths[i]) {
                 printf("SumOfValues (%d) < LineTimeLength(%d) \nFillLineGap has failed calculations.", SumOfValues, LineTimeLengths[i]);
                 exit(1);
@@ -114,9 +123,9 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
 
         //So now we have the table WordTimeValues, which shows percisely how many seconds each word should be appearing for, to make it easier we make these into timestamps, which is pretty easy
         //We just calculate the sum of each previous word time. First we need the total words
-        int TotalWords = 0;
-        for (int i = 0; i < TotalLines; i++) {
-            TotalWords += WordsPerLine[i];
+        int TotalWordsHuman = 0;
+        for (int i = 0; i < TotalLinesHuman; i++) {
+            TotalWordsHuman += WordsPerLineHuman[i];
         }
 
 
@@ -124,8 +133,8 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
         int WordTimeStamps[MAX_LINES * MAX_WORDS_PER_LINE];
         long int CurrentGlobalTime = 0;
         int WordIndex = 0;
-        for (int i = 0; i < TotalLines; i++) {
-            for (int j = 0; j < WordsPerLine[i]; j++) { // see how 0 is counted as a number? We talked about this
+        for (int i = 0; i < TotalLinesHuman; i++) {
+            for (int j = 0; j < WordsPerLineHuman[i]; j++) {
                 WordTimeStamps[WordIndex] = CurrentGlobalTime;
                 CurrentGlobalTime += WordTimeValues[i][j];
                 WordIndex++;
@@ -138,33 +147,38 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
         //And then we will show the next line
 
         int StartTime = (int)(GetTime()*1000);
-        int PreviousLineValue = -1; // 0 would mean the first line, but we start at -1 so we can detect when the line changes
-        int PreviousWordValue = -1; // same thing
+        int PreviousLineValue = 1;
+        int PreviousWordValue = 1;
         char Buffer[MAX_LINE_LENGTH] = "";
+        int CurrentWordValueInLine = 1;
 
         while (!WindowShouldClose()) {
-            int CurrentTime = (int)(GetTime()*1000 - StartTime);
+            long int CurrentTime = (int)(GetTime()*1000 - StartTime);
 
             // These will take the current time and based on it, will find which word and line we should be on.
-            int CurrentLineValue = FindCurrentLineValue(CurrentTime, LineResetTimeStamps, TotalLines); // could be 0, which means the first line
-            int CurrentWordValue = FindCurrentWordValue(CurrentTime, WordTimeStamps, TotalWords); // Same thing here
+            int CurrentLineValue = FindCurrentLineValue(CurrentTime, LineResetTimeStamps, TotalLinesHuman);
+            int CurrentWordValue = FindCurrentWordValue(CurrentTime, WordTimeStamps, TotalWordsHuman);
 
             // If the line has changed, Flush Line Buffer will delete the buffer, so we start clean. It will add the first word though, we always start with the first word already there
             // And later, if the word has changed, we update the buffer with the new word
             if (CurrentLineValue != PreviousLineValue) {
                 PreviousLineValue = CurrentLineValue;
-                FlushLineBuffer(Buffer, WordsOfEachLine[CurrentLineValue][0]);
+                FlushLineBuffer(Buffer, WordsOfEachLine[CurrentLineValue-1][0]); // Convert to machine numerals // Make sure to remember it may receive NULL if string is empty
+                CurrentWordValueInLine = 1;
             }
-            if (CurrentWordValue != PreviousWordValue) {
-                if (CurrentWordValue == 0) {
-                    CurrentWordValue = PreviousWordValue;
-                    // Remember, the buffer has already put the first word in, so we don't need to update it
-                } else {
-                    PreviousWordValue = CurrentWordValue;
+            if (CurrentWordValueInLine == 1) {
+                CurrentWordValueInLine = 2;
+                PreviousWordValue = CurrentWordValue;
+
+            } else{
+                if (CurrentWordValue != PreviousWordValue){
                     // Update the buffer with the new word will also put a space after each word.
                     // It takes the current Word
-                    UpdateBufferWords(Buffer, WordsOfEachLine[CurrentLineValue][CurrentWordValue], WordTimeStamps);
+                    PreviousWordValue = CurrentWordValue;
+                    UpdateBufferWords(Buffer, WordsOfEachLine[CurrentLineValue -1][CurrentWordValueInLine -1], WordTimeStamps); // Remember it may receive NULL if string is empty
+                    CurrentWordValueInLine++;
                 }
+
             }
             // So now, the buffer shows exactly what the user is hearing, all that remains is to show it
             // Which isn't simple either, because we will calculate how big the buffer is, and make it fit the screen
@@ -172,8 +186,8 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
             int Resolutionx = GetScreenWidth();
             int Resolutiony = GetScreenHeight();
 
-            PrintBuffer(Buffer, Resolutionx, Resolutiony);
-            DrawProgessBar(CurrentTime, TotalTime, Resolutionx, Resolutiony);
+            PrintBuffer(Buffer,font, Resolutionx, Resolutiony);
+            DrawProgressBar(CurrentTime, TotalTime, Resolutionx, Resolutiony);
             EndDrawing();
 
 
@@ -188,13 +202,25 @@ int StartSongWindow(char* font, char* SongName, char* ArtistName, bool DynamicSt
         // But we will use a buffer here too so we can reuse the previous function which calculates how it fits etc
 
         char Buffer[MAX_LINE_LENGTH] = "";
+        int StartTime = GetTime()*1000;
+        int CurrentLine=1;
+        int PreviousLine = 1;
         while (!WindowShouldClose()) {
+            long int CurrentTime = (GetTime()*1000) - StartTime;
             int Resolutionx = GetScreenWidth();
             int Resolutiony = GetScreenHeight();
-
+            CurrentLine = FindCurrentLineValue(CurrentTime, LineResetTimeStamps, TotalLinesHuman);
+            if (CurrentLine != PreviousLine) {
+                FlushLineBuffer(Buffer, LyricsLines[CurrentLine-1]);
+                PreviousLine = CurrentLine;
+            }
             BeginDrawing();
-            PrintBuffer(Buffer, Resolutionx, Resolutiony);
+
+            PrintBuffer(Buffer,font, Resolutionx, Resolutiony);
+            DrawProgressBar(CurrentTime, TotalTime, Resolutionx, Resolutiony);
             EndDrawing();
         }
     }
+    free(mp3Path);
+    free(LyricsPath);
 }

@@ -16,13 +16,13 @@ DownloadLyrics does the same thing, takes song and artist, returns path of the l
 
 ## `int CountLines(char* LyricsPath)`
 
-TotalLines obviously holds the total lines in the lyrics. Count lines shall return the number of lines. It receives the path, and it shall find the lyrics and count the `\n` characters in it, and return them +1.
+ obviously holds the total lines in the lyrics. Count lines shall return the number of lines. It receives the path, and it shall find the lyrics and count the `\n` characters in it, and return them as they are.
 
 ---
 
-## `char** SeparateLyricsLines(char* LyricsPath, int TotalLines)`
+## `char** SeparateLyricsLines(char* LyricsPath, int TotalLinesHuman)`
 
-LyricsLines separates the lines themselves, it returns an array with the pointers to these strings. It also gets the total lines, so the array must have totallines-1 objects. The rest shall be filled with NULL.
+LyricsLines separates the lines themselves, it returns an array with the pointers to these strings. It also gets the total lines, so the array must have totallines objects. The rest shall be filled with NULL.
 
 ---
 
@@ -74,27 +74,27 @@ FillLineGap, it's job is completely the opposite of ShrinkWordTimeValues, and it
 
 ---
 
-## `int FindCurrentLineValue(int CurrentTime, long int* LineResetTimeStamps, int TotalLines)`
+## `int FindCurrentLineValue(int CurrentTime, long int* LineResetTimeStamps, int TotalLinesHuman)`
 
-FindCurrentLineValue shall return the Line number we are currently at, given the current time in ms, and lineresettimestamps as a whole array and total lines so we don't overshoot. You'll calculate which line we should be at right now.
+FindCurrentLineValue shall return the Line number we are currently at, given the current time in ms, and lineresettimestamps as a whole array and total lines so we don't overshoot. You'll calculate which line we should be at right now. 1 means the first line.
 
 ---
 
-## `int FindCurrentWordValue(int CurrentTime, int* WordTimeStamps, int TotalWords)`
+## `int FindCurrentWordValue(int CurrentTime, int* WordTimeStamps, int TotalWordsHuman)`
 
-FindCurrentWordValue is the same thing, you'll get the current time, an array with all the words, and a total words so you don't overshoot. Total words is human numeral, so 0 means literally 0. It won't fit perfectly in your array as a value, but as a reference to where to stop. You'll calculate which word we should be at and return it's line, in computer numerals. meaning 0 is the first line.
+FindCurrentWordValue is the same thing, you'll get the current time, an array with all the words, and a total words so you don't overshoot. Total words is human numeral, so 0 means literally 0. It won't fit perfectly in your array as a value, but as a reference to where to stop. You'll calculate which word we should be at and return it's global count, in again, human numerals, so 1 means 1 word.
 
 ---
 
 ## `void FlushLineBuffer(char* Buffer, char* FirstWord)`
 
-FlushLineBuffer. Your job is minimal, you take the buffer string, and make it into the second argument. Basic copy string. Don't forget to add a space at the end of the word.
+FlushLineBuffer. Your job is minimal, you take the buffer string, and make it into the second argument. Basic copy string. Don't forget to add a space at the end of the word.You may also receive a whole string from the caller, in which case you should copy it into the buffer as is, adding the space to generalize the useage, after all it's harmless. IMPORTANT: you should handle the NULL case, and make sure the buffer returns as an empty string if NULL value found anywhere.
 
 ---
 
-## `void UpdateBufferWords(char* Buffer, char* Word, int* WordTimeStamps)`
+## `void UpdateBufferWords(char* Buffer, char* Word)`
 
-UpdateBufferWords, you'll take the buffer, and a string after it, and you have to append that string in the end of the buffer. Don't forget to add a space as well at the end of the word.
+UpdateBufferWords, you'll take the buffer, and a string after it, and you have to append that string in the end of the buffer. Don't forget to add a space as well at the end of the word. If received NULL, just add nothing to the buffer. 
 
 ---
 

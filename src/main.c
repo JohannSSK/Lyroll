@@ -5,6 +5,8 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include "../includes/gui.h"
+#include "../includes/audioNlyrics.h"
+
 
 
 
@@ -13,6 +15,12 @@ void Usage() {
 }
 
 int main(int argc, char** args){
+
+    // If no arguments given, just return
+    if (argc < 2) {
+        Usage();
+        return 0;
+    }
 
 
     // Default font is roboto, if user has specified a different font with --font flag, it uses that. handlefont() will check whether that font exists at all
@@ -28,13 +36,23 @@ int main(int argc, char** args){
 
 
     // Start menu window, continuestatus is what state the user decided in the menu window
-    int ContinueStatus = StartMenuWindow(font);
+    char* SongName = args[1];
+    char* ArtistName = args[2];
+    // Checks if the lyrics exist, and hand the information to menu window
+    CheckLRCLIB(SongName, ArtistName);
+    if (strcmp(SongName, "") != 0 && strcmp(ArtistName, "") != 0) {
+        // Checks if the song exists, and hand the information to menu window
+        CheckYoutube(SongName, ArtistName);
+    }
+
+    int ContinueStatus = StartMenuWindow(font, SongName, ArtistName);
+
 
     if (ContinueStatus == 2) {
         exit(0);
     }
 
-    bool DynamicStatus = false;
+    bool DynamicStatus = true;
     // We hand startsongwindow the font and arguments and it will check whether the songs exist and start a series of parsing and the audio player
     // We just have to check if there are 2 arguments so it doesn't crash
     if (ContinueStatus == 0 && argc > 2) {

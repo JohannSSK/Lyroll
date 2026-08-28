@@ -25,4 +25,10 @@
 #define COLOR_PURPLE      (Color){ 167, 139, 250, 255 }
 
 
+#define MAX_LINES 500
+#define MAX_LINE_LENGTH 10000
+#define MAX_WORDS_PER_LINE 200
+
+
+
 #endif
