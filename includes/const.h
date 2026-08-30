@@ -23,6 +23,8 @@
 #define COLOR_WARNING     (Color){ 251, 191, 36, 255 }
 #define COLOR_ERROR       (Color){ 248, 113, 113, 255 }
 #define COLOR_PURPLE      (Color){ 167, 139, 250, 255 }
+#define COLOR_PROGRESS_BG  (Color){ 55, 65, 81, 255 }
+#define COLOR_PROGRESS_FG  (Color){ 65, 139, 234, 255 }
 
 
 #define MAX_LINES 500

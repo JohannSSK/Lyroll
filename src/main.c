@@ -4,61 +4,78 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <stdio.h>
+
 #include "../includes/gui.h"
 #include "../includes/audioNlyrics.h"
 
-
-
-
 void Usage() {
-    printf("Usage: ");
+    printf("Usage: lyroll <song_name> <artist_name> [--font font.ttf]\n");
+    printf("\n");
+    printf("Examples:\n");
+    printf("  lyroll \"Would\" \"Alice In Chains\"\n");
+    printf("  lyroll \"Savia\" \"Soen\" --font CinzelFont.ttf\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  --font <file>    Use a custom font from assets/fonts/\n");
 }
 
-int main(int argc, char** args){
-
-    // If no arguments given, just return
-    if (argc < 2) {
+int main(int argc, char** args) {
+    // If no arguments given, show usage and exit
+    if (argc < 3) {
         Usage();
-        return 0;
+        return 1;
     }
 
-
-    // Default font is roboto, if user has specified a different font with --font flag, it uses that. handlefont() will check whether that font exists at all
+    // Default font is roboto
     char* font = "roboto.ttf";
-    if (argc>3) {
-        for (int i = 3; i < argc-1; i++) {
+    if (argc > 3) {
+        for (int i = 3; i < argc - 1; i++) {
             if (strcmp(args[i], "--font") == 0) {
-                font = args[i+1];
+                font = args[i + 1];
                 break;
             }
         }
     }
 
-
-    // Start menu window, continuestatus is what state the user decided in the menu window
     char* SongName = args[1];
     char* ArtistName = args[2];
-    // Checks if the lyrics exist, and hand the information to menu window
-    CheckLRCLIB(SongName, ArtistName);
-    if (strcmp(SongName, "") != 0 && strcmp(ArtistName, "") != 0) {
-        // Checks if the song exists, and hand the information to menu window
-        CheckYoutube(SongName, ArtistName);
+
+    // Buffers for exact names from LRCLIB
+    char exactArtist[256];
+    char exactTrack[256];
+
+    // Check if lyrics exist on LRCLIB
+    int found = CheckLRCLIB(SongName, ArtistName, exactArtist, sizeof(exactArtist), exactTrack, sizeof(exactTrack));
+    if (found <= 0) {
+        printf("No synced lyrics found for \"%s\" by \"%s\"\n", SongName, ArtistName);
+        return 1;
     }
+
+    // Check if song exists on YouTube
+    CheckYoutube(SongName, ArtistName);
+    if (strlen(SongName) == 0 || strlen(ArtistName) == 0) {
+        printf("Song not found on YouTube\n");
+        return 1;
+    }
+
+    // Show menu
+    printf("SongName: %s\n", SongName);
+    printf("ArtistName: %s\n", ArtistName);
+    printf("Exact Artist from LRCLIB: %s\n", exactArtist);
+    printf("Exact Track from LRCLIB: %s\n", exactTrack);
+    fflush(stdout);
 
     int ContinueStatus = StartMenuWindow(font, SongName, ArtistName);
 
-
     if (ContinueStatus == 2) {
-        exit(0);
+        printf("Exiting...\n");
+        return 0;
     }
 
-    bool DynamicStatus = true;
-    // We hand startsongwindow the font and arguments and it will check whether the songs exist and start a series of parsing and the audio player
-    // We just have to check if there are 2 arguments so it doesn't crash
-    if (ContinueStatus == 0 && argc > 2) {
-        StartSongWindow(font, args[1], args[2], DynamicStatus);
-    } else if (ContinueStatus == 0 && argc <= 2) {
-        exit(1);
-        Usage();
+    if (ContinueStatus == 0) {
+        bool DynamicStatus = true;
+        StartSongWindow(font, exactArtist, exactTrack, DynamicStatus);
     }
+
+    return 0;
 }

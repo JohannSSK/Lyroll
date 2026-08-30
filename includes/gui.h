@@ -1,14 +1,21 @@
 #ifndef GUI_H
 #define GUI_H
 
-#include "raylib.h"
+#include <raylib.h>
+#include <stdbool.h>
 
+// Window and font
 Font HandleFont(char* font);
-void InitializeWindow();
-Rectangle GetButtonRect(int index, int screenWidth);
-int GetHoveredItem(Vector2 mouse, int options, int screenWidth);
-void DrawTitle(Font font, int screenWidth);
+void InitializeWindow(void);
+
+// Display
+void PrintBuffer(char* Buffer, Font font, int ResolutionX, int ResolutionY);
+void DrawProgressBar(long int CurrentTime, long int TotalTime, int ResolutionX, int ResolutionY);
+
+// Menu
 int StartMenuWindow(char* font, char* SongName, char* ArtistName);
-int StartSongWindow(char* font, char* song, char* artist, bool DynamicStatus);
+
+// Song window
+int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicStatus);
 
 #endif
