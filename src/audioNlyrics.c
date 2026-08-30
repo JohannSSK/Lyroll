@@ -6,6 +6,66 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+// Runs argv[0] with the given arguments directly via fork+execvp (no shell
+// involved), and returns a FILE* streaming the child's stdout, like popen()
+// but immune to shell-metacharacter injection from user-controlled strings.
+// Caller must pclose()-style clean up with fclose() + waitpid on childPid.
+static FILE* SpawnCaptureStdout(char* const argv[], pid_t* childPid) {
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        perror("pipe failed");
+        return NULL;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return NULL;
+    }
+
+    if (pid == 0) {
+        // Child: redirect stdout to the pipe, silence stderr, then exec
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        freopen("/dev/null", "w", stderr);
+        execvp(argv[0], argv);
+        perror("execvp failed");
+        _exit(127);
+    }
+
+    // Parent
+    close(pipefd[1]);
+    FILE* fp = fdopen(pipefd[0], "r");
+    if (!fp) {
+        close(pipefd[0]);
+        return NULL;
+    }
+    *childPid = pid;
+    return fp;
+}
+
+// Replaces filesystem-unsafe characters ('/', '\', control chars, and a
+// leading '.') with '_' so user-supplied song/artist names can't be used
+// for path traversal (e.g. "../../etc") when building file paths, and can't
+// break shell quoting when logged/printed.
+static void SanitizeForFilename(const char* in, char* out, size_t outSize) {
+    size_t j = 0;
+    for (size_t i = 0; in[i] != '\0' && j + 1 < outSize; i++) {
+        unsigned char c = (unsigned char)in[i];
+        if (c == '/' || c == '\\' || c < 0x20 || c == 0x7f) {
+            out[j++] = '_';
+        } else {
+            out[j++] = (char)c;
+        }
+    }
+    out[j] = '\0';
+    // Never allow the sanitized name to start with '.' (hides files / ".." tricks)
+    if (out[0] == '.') out[0] = '_';
+}
+
 void PlayAudio(char* mp3Path) {
     int pid = fork();
 
@@ -123,15 +183,13 @@ void CheckYoutube(char* SongName, char* ArtistName) {
     printf("CheckYoutube: START\n");
     fflush(stdout);
 
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd),
-        "yt-dlp \"ytsearch:%s %s\" --get-id --get-title --no-warnings 2>/dev/null",
-        ArtistName, SongName);
+    char searchQuery[512];
+    snprintf(searchQuery, sizeof(searchQuery), "ytsearch:%s %s", ArtistName, SongName);
 
-    printf("CheckYoutube: cmd: %s\n", cmd);
-    fflush(stdout);
+    char* argv[] = { "yt-dlp", searchQuery, "--get-id", "--get-title", "--no-warnings", NULL };
 
-    FILE* fp = popen(cmd, "r");
+    pid_t childPid;
+    FILE* fp = SpawnCaptureStdout(argv, &childPid);
     if (!fp) {
         printf("Error with opening pipe in CheckYoutube\n");
         return;
@@ -142,19 +200,22 @@ void CheckYoutube(char* SongName, char* ArtistName) {
 
     if (fgets(ExactTitle, sizeof(ExactTitle), fp) == NULL) {
         printf("CheckYoutube: No exact title\n");
-        pclose(fp);
+        fclose(fp);
+        waitpid(childPid, NULL, 0);
         return;
     }
     if (fgets(VideoId, sizeof(VideoId), fp) == NULL) {
         printf("CheckYoutube: No video ID\n");
-        pclose(fp);
+        fclose(fp);
+        waitpid(childPid, NULL, 0);
         return;
     }
 
     ExactTitle[strcspn(ExactTitle, "\n")] = 0;
     VideoId[strcspn(VideoId, "\n")] = 0;
 
-    pclose(fp);
+    fclose(fp);
+    waitpid(childPid, NULL, 0);
 
     printf("CheckYoutube: ExactTitle: %s, VideoId: %s\n", ExactTitle, VideoId);
     fflush(stdout);
@@ -164,52 +225,80 @@ char* DownloadAudioMp3(char* SongName, char* ArtistName) {
     printf("DownloadAudioMp3: START\n");
     fflush(stdout);
 
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "yt-dlp \"ytsearch:%s %s\" --get-id --get-title --no-warnings 2>/dev/null",
-        ArtistName, SongName);
+    char searchQuery[512];
+    snprintf(searchQuery, sizeof(searchQuery), "ytsearch:%s %s", ArtistName, SongName);
+    char* searchArgv[] = { "yt-dlp", searchQuery, "--get-id", "--get-title", "--no-warnings", NULL };
 
-    printf("DownloadAudioMp3: cmd: %s\n", cmd);
-    fflush(stdout);
-
-    FILE* fp = popen(cmd, "r");
+    pid_t searchPid;
+    FILE* fp = SpawnCaptureStdout(searchArgv, &searchPid);
     if (!fp) {
         printf("Error with opening pipe in DownloadAudioMp3\n");
-        exit(1);
+        return NULL;
     }
 
     char ExactTitle[256];
     char VideoId[64];
 
-    fgets(ExactTitle, sizeof(ExactTitle), fp);
-    fgets(VideoId, sizeof(VideoId), fp);
+    if (fgets(ExactTitle, sizeof(ExactTitle), fp) == NULL ||
+        fgets(VideoId, sizeof(VideoId), fp) == NULL) {
+        printf("DownloadAudioMp3: No search results\n");
+        fclose(fp);
+        waitpid(searchPid, NULL, 0);
+        return NULL;
+    }
 
     ExactTitle[strcspn(ExactTitle, "\n")] = 0;
     VideoId[strcspn(VideoId, "\n")] = 0;
 
+    fclose(fp);
+    waitpid(searchPid, NULL, 0);
+
+    if (VideoId[0] == '\0') {
+        printf("DownloadAudioMp3: Empty video ID\n");
+        return NULL;
+    }
+
     printf("DownloadAudioMp3: VideoId: %s\n", VideoId);
     fflush(stdout);
 
+    // Sanitize names before using them in a filesystem path (no '/', '..', etc.)
+    char safeSong[256], safeArtist[256];
+    SanitizeForFilename(SongName, safeSong, sizeof(safeSong));
+    SanitizeForFilename(ArtistName, safeArtist, sizeof(safeArtist));
+
     char* Mp3AudioPath = malloc(1024);
     if (!Mp3AudioPath) {
-        pclose(fp);
         return NULL;
     }
-    snprintf(Mp3AudioPath, 1024, "assets/audio/%s-%s.mp3", SongName, ArtistName);
+    snprintf(Mp3AudioPath, 1024, "assets/audio/%s-%s.mp3", safeSong, safeArtist);
 
     printf("DownloadAudioMp3: Mp3AudioPath: %s\n", Mp3AudioPath);
     fflush(stdout);
 
-    snprintf(cmd, sizeof(cmd),
-        "yt-dlp -f bestaudio --extract-audio --audio-format mp3 -o \"%s\" \"https://www.youtube.com/watch?v=%s\"",
-        Mp3AudioPath, VideoId);
-    printf("DownloadAudioMp3: download cmd: %s\n", cmd);
-    fflush(stdout);
+    char videoUrl[128];
+    snprintf(videoUrl, sizeof(videoUrl), "https://www.youtube.com/watch?v=%s", VideoId);
 
-    int result = system(cmd);
-    pclose(fp);
+    char* downloadArgv[] = {
+        "yt-dlp", "-f", "bestaudio", "--extract-audio", "--audio-format", "mp3",
+        "-o", Mp3AudioPath, videoUrl, NULL
+    };
 
-    if (result != 0) {
+    pid_t downloadPid = fork();
+    if (downloadPid < 0) {
+        perror("fork failed");
+        free(Mp3AudioPath);
+        return NULL;
+    }
+    if (downloadPid == 0) {
+        execvp(downloadArgv[0], downloadArgv);
+        perror("execvp failed");
+        _exit(127);
+    }
+
+    int status = 0;
+    waitpid(downloadPid, &status, 0);
+
+    if (!(WIFEXITED(status) && WEXITSTATUS(status) == 0)) {
         printf("DownloadAudioMp3: Download failed\n");
         free(Mp3AudioPath);
         return NULL;
@@ -280,7 +369,10 @@ char* GetLyrics(char* exactArtist, char* exactTrack) {
         free(response_buffer);
         return NULL;
     }
-    snprintf(JsonLyricsPath, 1024, "assets/lyrics/%s-%s.json", exactArtist, exactTrack);
+    char safeArtist[256], safeTrack[256];
+    SanitizeForFilename(exactArtist, safeArtist, sizeof(safeArtist));
+    SanitizeForFilename(exactTrack, safeTrack, sizeof(safeTrack));
+    snprintf(JsonLyricsPath, 1024, "assets/lyrics/%s-%s.json", safeArtist, safeTrack);
 
     printf("GetLyrics: JsonLyricsPath: %s\n", JsonLyricsPath);
     fflush(stdout);

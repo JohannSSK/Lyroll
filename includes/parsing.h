@@ -8,8 +8,8 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex);
 int CalculateWordsPerLineHuman(char* line);
 
 // Buffer operations
-void FlushLineBuffer(char* Buffer, char* String);
-void UpdateBufferWords(char* Buffer, char* Word);
+void FlushLineBuffer(char* Buffer, size_t BufferSize, char* String);
+void UpdateBufferWords(char* Buffer, size_t BufferSize, char* Word);
 
 // Parsing functions
 long int GetSongDuration(char* LyricsPath);
@@ -29,7 +29,7 @@ int FindCurrentWordValue(long int CurrentTime, int* WordTimeStamps, int TotalWor
 
 // Parsing functions
 long int* SeparateTimeStamps(char** lyrics, int TotalLinesHuman);
-int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman);
+int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman, long int TotalTime);
 
 // BPM detection
 int CheckAubioExists(void);

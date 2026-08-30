@@ -19,8 +19,14 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex) {
         exit(1);
     }
 
-    // Copy to mutable buffer
-    char buffer[512];
+    // Copy to a mutable, dynamically-sized buffer (a line can be up to
+    // MAX_LINE_LENGTH; a fixed 512-byte stack buffer would overflow on
+    // longer lines)
+    char* buffer = malloc(strlen(start) + 1);
+    if (!buffer) {
+        printf("ERROR: malloc failed in SeparateWords for line %d, word %d\n", lineIndex, wordIndex);
+        exit(1);
+    }
     strcpy(buffer, start);
 
     // Split by spaces
@@ -31,9 +37,11 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex) {
             char* result = malloc(strlen(token) + 1);
             if (!result) {
                 printf("ERROR: malloc failed in SeparateWords for line %d, word %d\n", lineIndex, wordIndex);
+                free(buffer);
                 exit(1);
             }
             strcpy(result, token);
+            free(buffer);
             return result;
         }
         count++;
@@ -41,17 +49,17 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex) {
     }
 
     printf("ERROR: Word %d not found in line %d in SeparateWords\n", wordIndex, lineIndex);
+    free(buffer);
     exit(1);
 }
 
-void FlushLineBuffer(char* Buffer, char* String) {
-    if (String == NULL) {
-        Buffer[0] = '\0';
+void FlushLineBuffer(char* Buffer, size_t BufferSize, char* String) {
+    if (String == NULL || BufferSize == 0) {
+        if (BufferSize > 0) Buffer[0] = '\0';
         return;
     }
 
-    strcpy(Buffer, String);
-    strcat(Buffer, " ");
+    snprintf(Buffer, BufferSize, "%s ", String);
 }
 
 int CalculateWordsPerLineHuman(char* line) {
@@ -142,7 +150,8 @@ int CountLines(char* LyricsPath){
     }
 
     int lines = 0;
-    for (int i = 0; i < strlen(lyrics); i++){
+    size_t lyricsLen = strlen(lyrics);
+    for (size_t i = 0; i < lyricsLen; i++){
         if (lyrics[i] == '\n'){
             lines++;
         }

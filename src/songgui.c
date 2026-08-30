@@ -30,15 +30,41 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
 
     // Count lines in the lyrics
     int TotalLinesHuman = CountLines(LyricsPath);
+    if (TotalLinesHuman <= 0 || TotalLinesHuman > MAX_LINES) {
+        printf("Lyrics have %d lines, which is outside the supported range (1-%d)\n",
+               TotalLinesHuman, MAX_LINES);
+        free(mp3Path);
+        free(LyricsPath);
+        return 1;
+    }
     char** LyricsLines = SeparateLyricsLines(LyricsPath, TotalLinesHuman);
+    if (LyricsLines == NULL) {
+        printf("Failed to parse lyrics lines\n");
+        free(mp3Path);
+        free(LyricsPath);
+        return 1;
+    }
     long int LineResetTimeStamps[MAX_LINES] = {0};
     long int* timestamps = SeparateTimeStamps(LyricsLines, TotalLinesHuman);
+    if (timestamps == NULL) {
+        printf("Failed to parse lyric timestamps\n");
+        free(mp3Path);
+        free(LyricsPath);
+        return 1;
+    }
     for (int i = 0; i < TotalLinesHuman; i++) {
         LineResetTimeStamps[i] = timestamps[i];
     }
 
     long int TotalTime = GetSongDuration(LyricsPath);
-    int* LineTimeLengths = CalculateLineTimeLengths(LineResetTimeStamps, TotalLinesHuman);
+    int* LineTimeLengths = CalculateLineTimeLengths(LineResetTimeStamps, TotalLinesHuman, TotalTime);
+    if (LineTimeLengths == NULL) {
+        printf("Failed to calculate line time lengths\n");
+        free(mp3Path);
+        free(LyricsPath);
+        free(timestamps);
+        return 1;
+    }
     long int ShouldBeTotalTime = 0;
     for (int i = 0; i < TotalLinesHuman; i++) {
         ShouldBeTotalTime += LineTimeLengths[i];
@@ -60,6 +86,11 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
         int WordsPerLineHuman[MAX_LINES];
         for (int i = 0; i < TotalLinesHuman; i++) {
             WordsPerLineHuman[i] = CalculateWordsPerLineHuman(LyricsLines[i]);
+            if (WordsPerLineHuman[i] > MAX_WORDS_PER_LINE) {
+                printf("Line %d has %d words, exceeding MAX_WORDS_PER_LINE (%d); truncating\n",
+                       i, WordsPerLineHuman[i], MAX_WORDS_PER_LINE);
+                WordsPerLineHuman[i] = MAX_WORDS_PER_LINE;
+            }
         }
 
         // Separate words
@@ -160,7 +191,7 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
             if (CurrentLineValue != PreviousLineValue) {
                 PreviousLineValue = CurrentLineValue;
                 if (WordsPerLineHuman[CurrentLineValue - 1] > 0) {
-                    FlushLineBuffer(Buffer, WordsOfEachLine[CurrentLineValue - 1][0]);
+                    FlushLineBuffer(Buffer, sizeof(Buffer), WordsOfEachLine[CurrentLineValue - 1][0]);
                 } else {
                     Buffer[0] = '\0';
                 }
@@ -175,7 +206,7 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
                     PreviousWordValue = CurrentWordValue;
                     if (WordsPerLineHuman[CurrentLineValue - 1] > 0 &&
                         CurrentWordValueInLine - 1 < WordsPerLineHuman[CurrentLineValue - 1]) {
-                        UpdateBufferWords(Buffer, WordsOfEachLine[CurrentLineValue - 1][CurrentWordValueInLine - 1]);
+                        UpdateBufferWords(Buffer, sizeof(Buffer), WordsOfEachLine[CurrentLineValue - 1][CurrentWordValueInLine - 1]);
                     }
                     CurrentWordValueInLine++;
                 }
@@ -206,7 +237,7 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
 
             CurrentLine = FindCurrentLineValue(CurrentTime, LineResetTimeStamps, TotalLinesHuman);
             if (CurrentLine != PreviousLine) {
-                FlushLineBuffer(Buffer, LyricsLines[CurrentLine - 1]);
+                FlushLineBuffer(Buffer, sizeof(Buffer), LyricsLines[CurrentLine - 1]);
                 PreviousLine = CurrentLine;
             }
 

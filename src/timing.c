@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include "../libs/cJSON/cJSON.h"
 #define VOWEL_MS 180
 #define CONSONANT_MS 20
@@ -70,14 +71,19 @@ void ShrinkWordTimeValues(int* WordTimeValuesRow, int WordsPerLine, int LineTime
         sum += WordTimeValuesRow[i];
     }
 
-    // Shrink one by one until sum fits
+    // Shrink one by one until sum fits. Each word has a floor of 1ms, so if
+    // the target is smaller than WordsPerLine, sum can never reach it — bail
+    // out once a full pass makes no progress instead of looping forever.
     while (sum > LineTimeLength) {
+        bool madeProgress = false;
         for (int i = 0; i < WordsPerLine && sum > LineTimeLength; i++) {
             if (WordTimeValuesRow[i] > 1) {
                 WordTimeValuesRow[i]--;
                 sum--;
+                madeProgress = true;
             }
         }
+        if (!madeProgress) break;
     }
 }
 
@@ -158,13 +164,19 @@ int FindCurrentWordValue(long int CurrentTime, int* WordTimeStamps, int TotalWor
     return TotalWordsHuman;
 }
 
-void UpdateBufferWords(char* Buffer, char* Word) {
-    if (Word == NULL) {
+void UpdateBufferWords(char* Buffer, size_t BufferSize, char* Word) {
+    if (Word == NULL || BufferSize == 0) {
         return;  // Do nothing, keep buffer as is
     }
 
-    strcat(Buffer, " ");
-    strcat(Buffer, Word);
+    size_t used = strlen(Buffer);
+    if (used + 1 < BufferSize) {
+        strncat(Buffer, " ", BufferSize - used - 1);
+        used = strlen(Buffer);
+    }
+    if (used < BufferSize - 1) {
+        strncat(Buffer, Word, BufferSize - used - 1);
+    }
 }
 
 
@@ -193,7 +205,7 @@ long int* SeparateTimeStamps(char** lyrics, int TotalLinesHuman) {
 }
 
 
-int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman) {
+int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman, long int TotalTime) {
     int* lengths = malloc(TotalLinesHuman * sizeof(int));
     if (!lengths) return NULL;
 
@@ -201,7 +213,10 @@ int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman
         lengths[i] = LineResetTimeStamps[i + 1] - LineResetTimeStamps[i];
         if (lengths[i] < 0) lengths[i] = 0;
     }
-    lengths[TotalLinesHuman - 1] = 0;  // Last line
+    // Last line runs until the song actually ends, not a hardcoded 0 —
+    // a 0-length budget made ShrinkWordTimeValues loop forever on it.
+    long int lastLen = TotalTime - LineResetTimeStamps[TotalLinesHuman - 1];
+    lengths[TotalLinesHuman - 1] = (lastLen > 0) ? (int)lastLen : 0;
 
     return lengths;
 }
@@ -210,6 +225,7 @@ int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 
 int CheckAubioExists() {
     // Check if aubio is installed
@@ -220,12 +236,33 @@ int CheckAubioExists() {
 }
 
 float GetBpmFromAubio(char* mp3Path) {
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        return 120.0;
+    }
 
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "aubio tempo \"%s\" 2>/dev/null", mp3Path);
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return 120.0;
+    }
 
-    FILE* fp = popen(cmd, "r");
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        freopen("/dev/null", "w", stderr);
+        char* argv[] = { "aubio", "tempo", mp3Path, NULL };
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+    FILE* fp = fdopen(pipefd[0], "r");
     if (!fp) {
+        close(pipefd[0]);
+        waitpid(pid, NULL, 0);
         return 120.0;
     }
 
@@ -240,6 +277,7 @@ float GetBpmFromAubio(char* mp3Path) {
         }
     }
 
-    pclose(fp);
+    fclose(fp);
+    waitpid(pid, NULL, 0);
     return bpm;
 }

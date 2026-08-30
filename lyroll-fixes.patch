@@ -1,0 +1,566 @@
+diff --git a/includes/parsing.h b/includes/parsing.h
+index 448a56a..f05eb4a 100644
+--- a/includes/parsing.h
++++ b/includes/parsing.h
+@@ -8,8 +8,8 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex);
+ int CalculateWordsPerLineHuman(char* line);
+ 
+ // Buffer operations
+-void FlushLineBuffer(char* Buffer, char* String);
+-void UpdateBufferWords(char* Buffer, char* Word);
++void FlushLineBuffer(char* Buffer, size_t BufferSize, char* String);
++void UpdateBufferWords(char* Buffer, size_t BufferSize, char* Word);
+ 
+ // Parsing functions
+ long int GetSongDuration(char* LyricsPath);
+@@ -29,7 +29,7 @@ int FindCurrentWordValue(long int CurrentTime, int* WordTimeStamps, int TotalWor
+ 
+ // Parsing functions
+ long int* SeparateTimeStamps(char** lyrics, int TotalLinesHuman);
+-int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman);
++int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman, long int TotalTime);
+ 
+ // BPM detection
+ int CheckAubioExists(void);
+diff --git a/includes/timing.h b/includes/timing.h
+index 5d7725c..5ad4e9c 100644
+--- a/includes/timing.h
++++ b/includes/timing.h
+@@ -1,5 +1,5 @@
+-#ifndef PARSING_H
+-#define PARSING_H
++#ifndef TIMING_H
++#define TIMING_H
+ 
+ #include <stddef.h>
+ 
+@@ -15,11 +15,11 @@ int FindCurrentLineValue(long int CurrentTime, long int* LineResetTimeStamps, in
+ int FindCurrentWordValue(long int CurrentTime, int* WordTimeStamps, int TotalWordsHuman);
+ 
+ // Buffer operations
+-void UpdateBufferWords(char* Buffer, char* Word);
++void UpdateBufferWords(char* Buffer, size_t BufferSize, char* Word);
+ 
+ // Parsing functions
+ long int* SeparateTimeStamps(char** lyrics, int TotalLinesHuman);
+-int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman);
++int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman, long int TotalTime);
+ 
+ // BPM detection
+ int CheckAubioExists(void);
+diff --git a/src/audioNlyrics.c b/src/audioNlyrics.c
+index 14cd1f5..80c5fef 100644
+--- a/src/audioNlyrics.c
++++ b/src/audioNlyrics.c
+@@ -6,6 +6,66 @@
+ #include <unistd.h>
+ #include <sys/wait.h>
+ 
++// Runs argv[0] with the given arguments directly via fork+execvp (no shell
++// involved), and returns a FILE* streaming the child's stdout, like popen()
++// but immune to shell-metacharacter injection from user-controlled strings.
++// Caller must pclose()-style clean up with fclose() + waitpid on childPid.
++static FILE* SpawnCaptureStdout(char* const argv[], pid_t* childPid) {
++    int pipefd[2];
++    if (pipe(pipefd) != 0) {
++        perror("pipe failed");
++        return NULL;
++    }
++
++    pid_t pid = fork();
++    if (pid < 0) {
++        perror("fork failed");
++        close(pipefd[0]);
++        close(pipefd[1]);
++        return NULL;
++    }
++
++    if (pid == 0) {
++        // Child: redirect stdout to the pipe, silence stderr, then exec
++        close(pipefd[0]);
++        dup2(pipefd[1], STDOUT_FILENO);
++        close(pipefd[1]);
++        freopen("/dev/null", "w", stderr);
++        execvp(argv[0], argv);
++        perror("execvp failed");
++        _exit(127);
++    }
++
++    // Parent
++    close(pipefd[1]);
++    FILE* fp = fdopen(pipefd[0], "r");
++    if (!fp) {
++        close(pipefd[0]);
++        return NULL;
++    }
++    *childPid = pid;
++    return fp;
++}
++
++// Replaces filesystem-unsafe characters ('/', '\', control chars, and a
++// leading '.') with '_' so user-supplied song/artist names can't be used
++// for path traversal (e.g. "../../etc") when building file paths, and can't
++// break shell quoting when logged/printed.
++static void SanitizeForFilename(const char* in, char* out, size_t outSize) {
++    size_t j = 0;
++    for (size_t i = 0; in[i] != '\0' && j + 1 < outSize; i++) {
++        unsigned char c = (unsigned char)in[i];
++        if (c == '/' || c == '\\' || c < 0x20 || c == 0x7f) {
++            out[j++] = '_';
++        } else {
++            out[j++] = (char)c;
++        }
++    }
++    out[j] = '\0';
++    // Never allow the sanitized name to start with '.' (hides files / ".." tricks)
++    if (out[0] == '.') out[0] = '_';
++}
++
+ void PlayAudio(char* mp3Path) {
+     int pid = fork();
+ 
+@@ -123,15 +183,13 @@ void CheckYoutube(char* SongName, char* ArtistName) {
+     printf("CheckYoutube: START\n");
+     fflush(stdout);
+ 
+-    char cmd[512];
+-    snprintf(cmd, sizeof(cmd),
+-        "yt-dlp \"ytsearch:%s %s\" --get-id --get-title --no-warnings 2>/dev/null",
+-        ArtistName, SongName);
++    char searchQuery[512];
++    snprintf(searchQuery, sizeof(searchQuery), "ytsearch:%s %s", ArtistName, SongName);
+ 
+-    printf("CheckYoutube: cmd: %s\n", cmd);
+-    fflush(stdout);
++    char* argv[] = { "yt-dlp", searchQuery, "--get-id", "--get-title", "--no-warnings", NULL };
+ 
+-    FILE* fp = popen(cmd, "r");
++    pid_t childPid;
++    FILE* fp = SpawnCaptureStdout(argv, &childPid);
+     if (!fp) {
+         printf("Error with opening pipe in CheckYoutube\n");
+         return;
+@@ -142,19 +200,22 @@ void CheckYoutube(char* SongName, char* ArtistName) {
+ 
+     if (fgets(ExactTitle, sizeof(ExactTitle), fp) == NULL) {
+         printf("CheckYoutube: No exact title\n");
+-        pclose(fp);
++        fclose(fp);
++        waitpid(childPid, NULL, 0);
+         return;
+     }
+     if (fgets(VideoId, sizeof(VideoId), fp) == NULL) {
+         printf("CheckYoutube: No video ID\n");
+-        pclose(fp);
++        fclose(fp);
++        waitpid(childPid, NULL, 0);
+         return;
+     }
+ 
+     ExactTitle[strcspn(ExactTitle, "\n")] = 0;
+     VideoId[strcspn(VideoId, "\n")] = 0;
+ 
+-    pclose(fp);
++    fclose(fp);
++    waitpid(childPid, NULL, 0);
+ 
+     printf("CheckYoutube: ExactTitle: %s, VideoId: %s\n", ExactTitle, VideoId);
+     fflush(stdout);
+@@ -164,52 +225,80 @@ char* DownloadAudioMp3(char* SongName, char* ArtistName) {
+     printf("DownloadAudioMp3: START\n");
+     fflush(stdout);
+ 
+-    char cmd[1024];
+-    snprintf(cmd, sizeof(cmd),
+-        "yt-dlp \"ytsearch:%s %s\" --get-id --get-title --no-warnings 2>/dev/null",
+-        ArtistName, SongName);
++    char searchQuery[512];
++    snprintf(searchQuery, sizeof(searchQuery), "ytsearch:%s %s", ArtistName, SongName);
++    char* searchArgv[] = { "yt-dlp", searchQuery, "--get-id", "--get-title", "--no-warnings", NULL };
+ 
+-    printf("DownloadAudioMp3: cmd: %s\n", cmd);
+-    fflush(stdout);
+-
+-    FILE* fp = popen(cmd, "r");
++    pid_t searchPid;
++    FILE* fp = SpawnCaptureStdout(searchArgv, &searchPid);
+     if (!fp) {
+         printf("Error with opening pipe in DownloadAudioMp3\n");
+-        exit(1);
++        return NULL;
+     }
+ 
+     char ExactTitle[256];
+     char VideoId[64];
+ 
+-    fgets(ExactTitle, sizeof(ExactTitle), fp);
+-    fgets(VideoId, sizeof(VideoId), fp);
++    if (fgets(ExactTitle, sizeof(ExactTitle), fp) == NULL ||
++        fgets(VideoId, sizeof(VideoId), fp) == NULL) {
++        printf("DownloadAudioMp3: No search results\n");
++        fclose(fp);
++        waitpid(searchPid, NULL, 0);
++        return NULL;
++    }
+ 
+     ExactTitle[strcspn(ExactTitle, "\n")] = 0;
+     VideoId[strcspn(VideoId, "\n")] = 0;
+ 
++    fclose(fp);
++    waitpid(searchPid, NULL, 0);
++
++    if (VideoId[0] == '\0') {
++        printf("DownloadAudioMp3: Empty video ID\n");
++        return NULL;
++    }
++
+     printf("DownloadAudioMp3: VideoId: %s\n", VideoId);
+     fflush(stdout);
+ 
++    // Sanitize names before using them in a filesystem path (no '/', '..', etc.)
++    char safeSong[256], safeArtist[256];
++    SanitizeForFilename(SongName, safeSong, sizeof(safeSong));
++    SanitizeForFilename(ArtistName, safeArtist, sizeof(safeArtist));
++
+     char* Mp3AudioPath = malloc(1024);
+     if (!Mp3AudioPath) {
+-        pclose(fp);
+         return NULL;
+     }
+-    snprintf(Mp3AudioPath, 1024, "assets/audio/%s-%s.mp3", SongName, ArtistName);
++    snprintf(Mp3AudioPath, 1024, "assets/audio/%s-%s.mp3", safeSong, safeArtist);
+ 
+     printf("DownloadAudioMp3: Mp3AudioPath: %s\n", Mp3AudioPath);
+     fflush(stdout);
+ 
+-    snprintf(cmd, sizeof(cmd),
+-        "yt-dlp -f bestaudio --extract-audio --audio-format mp3 -o \"%s\" \"https://www.youtube.com/watch?v=%s\"",
+-        Mp3AudioPath, VideoId);
+-    printf("DownloadAudioMp3: download cmd: %s\n", cmd);
+-    fflush(stdout);
++    char videoUrl[128];
++    snprintf(videoUrl, sizeof(videoUrl), "https://www.youtube.com/watch?v=%s", VideoId);
++
++    char* downloadArgv[] = {
++        "yt-dlp", "-f", "bestaudio", "--extract-audio", "--audio-format", "mp3",
++        "-o", Mp3AudioPath, videoUrl, NULL
++    };
++
++    pid_t downloadPid = fork();
++    if (downloadPid < 0) {
++        perror("fork failed");
++        free(Mp3AudioPath);
++        return NULL;
++    }
++    if (downloadPid == 0) {
++        execvp(downloadArgv[0], downloadArgv);
++        perror("execvp failed");
++        _exit(127);
++    }
+ 
+-    int result = system(cmd);
+-    pclose(fp);
++    int status = 0;
++    waitpid(downloadPid, &status, 0);
+ 
+-    if (result != 0) {
++    if (!(WIFEXITED(status) && WEXITSTATUS(status) == 0)) {
+         printf("DownloadAudioMp3: Download failed\n");
+         free(Mp3AudioPath);
+         return NULL;
+@@ -280,7 +369,10 @@ char* GetLyrics(char* exactArtist, char* exactTrack) {
+         free(response_buffer);
+         return NULL;
+     }
+-    snprintf(JsonLyricsPath, 1024, "assets/lyrics/%s-%s.json", exactArtist, exactTrack);
++    char safeArtist[256], safeTrack[256];
++    SanitizeForFilename(exactArtist, safeArtist, sizeof(safeArtist));
++    SanitizeForFilename(exactTrack, safeTrack, sizeof(safeTrack));
++    snprintf(JsonLyricsPath, 1024, "assets/lyrics/%s-%s.json", safeArtist, safeTrack);
+ 
+     printf("GetLyrics: JsonLyricsPath: %s\n", JsonLyricsPath);
+     fflush(stdout);
+diff --git a/src/parsing.c b/src/parsing.c
+index 507577e..f6645cb 100644
+--- a/src/parsing.c
++++ b/src/parsing.c
+@@ -19,8 +19,14 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex) {
+         exit(1);
+     }
+ 
+-    // Copy to mutable buffer
+-    char buffer[512];
++    // Copy to a mutable, dynamically-sized buffer (a line can be up to
++    // MAX_LINE_LENGTH; a fixed 512-byte stack buffer would overflow on
++    // longer lines)
++    char* buffer = malloc(strlen(start) + 1);
++    if (!buffer) {
++        printf("ERROR: malloc failed in SeparateWords for line %d, word %d\n", lineIndex, wordIndex);
++        exit(1);
++    }
+     strcpy(buffer, start);
+ 
+     // Split by spaces
+@@ -31,9 +37,11 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex) {
+             char* result = malloc(strlen(token) + 1);
+             if (!result) {
+                 printf("ERROR: malloc failed in SeparateWords for line %d, word %d\n", lineIndex, wordIndex);
++                free(buffer);
+                 exit(1);
+             }
+             strcpy(result, token);
++            free(buffer);
+             return result;
+         }
+         count++;
+@@ -41,17 +49,17 @@ char* SeparateWords(char** LyricsLines, int lineIndex, int wordIndex) {
+     }
+ 
+     printf("ERROR: Word %d not found in line %d in SeparateWords\n", wordIndex, lineIndex);
++    free(buffer);
+     exit(1);
+ }
+ 
+-void FlushLineBuffer(char* Buffer, char* String) {
+-    if (String == NULL) {
+-        Buffer[0] = '\0';
++void FlushLineBuffer(char* Buffer, size_t BufferSize, char* String) {
++    if (String == NULL || BufferSize == 0) {
++        if (BufferSize > 0) Buffer[0] = '\0';
+         return;
+     }
+ 
+-    strcpy(Buffer, String);
+-    strcat(Buffer, " ");
++    snprintf(Buffer, BufferSize, "%s ", String);
+ }
+ 
+ int CalculateWordsPerLineHuman(char* line) {
+@@ -142,7 +150,8 @@ int CountLines(char* LyricsPath){
+     }
+ 
+     int lines = 0;
+-    for (int i = 0; i < strlen(lyrics); i++){
++    size_t lyricsLen = strlen(lyrics);
++    for (size_t i = 0; i < lyricsLen; i++){
+         if (lyrics[i] == '\n'){
+             lines++;
+         }
+diff --git a/src/songgui.c b/src/songgui.c
+index b3a6c06..944951a 100644
+--- a/src/songgui.c
++++ b/src/songgui.c
+@@ -30,15 +30,41 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
+ 
+     // Count lines in the lyrics
+     int TotalLinesHuman = CountLines(LyricsPath);
++    if (TotalLinesHuman <= 0 || TotalLinesHuman > MAX_LINES) {
++        printf("Lyrics have %d lines, which is outside the supported range (1-%d)\n",
++               TotalLinesHuman, MAX_LINES);
++        free(mp3Path);
++        free(LyricsPath);
++        return 1;
++    }
+     char** LyricsLines = SeparateLyricsLines(LyricsPath, TotalLinesHuman);
++    if (LyricsLines == NULL) {
++        printf("Failed to parse lyrics lines\n");
++        free(mp3Path);
++        free(LyricsPath);
++        return 1;
++    }
+     long int LineResetTimeStamps[MAX_LINES] = {0};
+     long int* timestamps = SeparateTimeStamps(LyricsLines, TotalLinesHuman);
++    if (timestamps == NULL) {
++        printf("Failed to parse lyric timestamps\n");
++        free(mp3Path);
++        free(LyricsPath);
++        return 1;
++    }
+     for (int i = 0; i < TotalLinesHuman; i++) {
+         LineResetTimeStamps[i] = timestamps[i];
+     }
+ 
+     long int TotalTime = GetSongDuration(LyricsPath);
+-    int* LineTimeLengths = CalculateLineTimeLengths(LineResetTimeStamps, TotalLinesHuman);
++    int* LineTimeLengths = CalculateLineTimeLengths(LineResetTimeStamps, TotalLinesHuman, TotalTime);
++    if (LineTimeLengths == NULL) {
++        printf("Failed to calculate line time lengths\n");
++        free(mp3Path);
++        free(LyricsPath);
++        free(timestamps);
++        return 1;
++    }
+     long int ShouldBeTotalTime = 0;
+     for (int i = 0; i < TotalLinesHuman; i++) {
+         ShouldBeTotalTime += LineTimeLengths[i];
+@@ -60,6 +86,11 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
+         int WordsPerLineHuman[MAX_LINES];
+         for (int i = 0; i < TotalLinesHuman; i++) {
+             WordsPerLineHuman[i] = CalculateWordsPerLineHuman(LyricsLines[i]);
++            if (WordsPerLineHuman[i] > MAX_WORDS_PER_LINE) {
++                printf("Line %d has %d words, exceeding MAX_WORDS_PER_LINE (%d); truncating\n",
++                       i, WordsPerLineHuman[i], MAX_WORDS_PER_LINE);
++                WordsPerLineHuman[i] = MAX_WORDS_PER_LINE;
++            }
+         }
+ 
+         // Separate words
+@@ -160,7 +191,7 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
+             if (CurrentLineValue != PreviousLineValue) {
+                 PreviousLineValue = CurrentLineValue;
+                 if (WordsPerLineHuman[CurrentLineValue - 1] > 0) {
+-                    FlushLineBuffer(Buffer, WordsOfEachLine[CurrentLineValue - 1][0]);
++                    FlushLineBuffer(Buffer, sizeof(Buffer), WordsOfEachLine[CurrentLineValue - 1][0]);
+                 } else {
+                     Buffer[0] = '\0';
+                 }
+@@ -175,7 +206,7 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
+                     PreviousWordValue = CurrentWordValue;
+                     if (WordsPerLineHuman[CurrentLineValue - 1] > 0 &&
+                         CurrentWordValueInLine - 1 < WordsPerLineHuman[CurrentLineValue - 1]) {
+-                        UpdateBufferWords(Buffer, WordsOfEachLine[CurrentLineValue - 1][CurrentWordValueInLine - 1]);
++                        UpdateBufferWords(Buffer, sizeof(Buffer), WordsOfEachLine[CurrentLineValue - 1][CurrentWordValueInLine - 1]);
+                     }
+                     CurrentWordValueInLine++;
+                 }
+@@ -206,7 +237,7 @@ int StartSongWindow(char* font, char* ArtistName, char* SongName, bool DynamicSt
+ 
+             CurrentLine = FindCurrentLineValue(CurrentTime, LineResetTimeStamps, TotalLinesHuman);
+             if (CurrentLine != PreviousLine) {
+-                FlushLineBuffer(Buffer, LyricsLines[CurrentLine - 1]);
++                FlushLineBuffer(Buffer, sizeof(Buffer), LyricsLines[CurrentLine - 1]);
+                 PreviousLine = CurrentLine;
+             }
+ 
+diff --git a/src/timing.c b/src/timing.c
+index da77807..28d28ad 100644
+--- a/src/timing.c
++++ b/src/timing.c
+@@ -3,6 +3,7 @@
+ #include <string.h>
+ #include <ctype.h>
+ #include <unistd.h>
++#include <stdbool.h>
+ #include "../libs/cJSON/cJSON.h"
+ #define VOWEL_MS 180
+ #define CONSONANT_MS 20
+@@ -70,14 +71,19 @@ void ShrinkWordTimeValues(int* WordTimeValuesRow, int WordsPerLine, int LineTime
+         sum += WordTimeValuesRow[i];
+     }
+ 
+-    // Shrink one by one until sum fits
++    // Shrink one by one until sum fits. Each word has a floor of 1ms, so if
++    // the target is smaller than WordsPerLine, sum can never reach it — bail
++    // out once a full pass makes no progress instead of looping forever.
+     while (sum > LineTimeLength) {
++        bool madeProgress = false;
+         for (int i = 0; i < WordsPerLine && sum > LineTimeLength; i++) {
+             if (WordTimeValuesRow[i] > 1) {
+                 WordTimeValuesRow[i]--;
+                 sum--;
++                madeProgress = true;
+             }
+         }
++        if (!madeProgress) break;
+     }
+ }
+ 
+@@ -158,13 +164,19 @@ int FindCurrentWordValue(long int CurrentTime, int* WordTimeStamps, int TotalWor
+     return TotalWordsHuman;
+ }
+ 
+-void UpdateBufferWords(char* Buffer, char* Word) {
+-    if (Word == NULL) {
++void UpdateBufferWords(char* Buffer, size_t BufferSize, char* Word) {
++    if (Word == NULL || BufferSize == 0) {
+         return;  // Do nothing, keep buffer as is
+     }
+ 
+-    strcat(Buffer, " ");
+-    strcat(Buffer, Word);
++    size_t used = strlen(Buffer);
++    if (used + 1 < BufferSize) {
++        strncat(Buffer, " ", BufferSize - used - 1);
++        used = strlen(Buffer);
++    }
++    if (used < BufferSize - 1) {
++        strncat(Buffer, Word, BufferSize - used - 1);
++    }
+ }
+ 
+ 
+@@ -193,7 +205,7 @@ long int* SeparateTimeStamps(char** lyrics, int TotalLinesHuman) {
+ }
+ 
+ 
+-int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman) {
++int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman, long int TotalTime) {
+     int* lengths = malloc(TotalLinesHuman * sizeof(int));
+     if (!lengths) return NULL;
+ 
+@@ -201,7 +213,10 @@ int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman
+         lengths[i] = LineResetTimeStamps[i + 1] - LineResetTimeStamps[i];
+         if (lengths[i] < 0) lengths[i] = 0;
+     }
+-    lengths[TotalLinesHuman - 1] = 0;  // Last line
++    // Last line runs until the song actually ends, not a hardcoded 0 —
++    // a 0-length budget made ShrinkWordTimeValues loop forever on it.
++    long int lastLen = TotalTime - LineResetTimeStamps[TotalLinesHuman - 1];
++    lengths[TotalLinesHuman - 1] = (lastLen > 0) ? (int)lastLen : 0;
+ 
+     return lengths;
+ }
+@@ -210,6 +225,7 @@ int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/wait.h>
+ 
+ int CheckAubioExists() {
+     // Check if aubio is installed
+@@ -220,12 +236,33 @@ int CheckAubioExists() {
+ }
+ 
+ float GetBpmFromAubio(char* mp3Path) {
++    int pipefd[2];
++    if (pipe(pipefd) != 0) {
++        return 120.0;
++    }
+ 
+-    char cmd[512];
+-    snprintf(cmd, sizeof(cmd), "aubio tempo \"%s\" 2>/dev/null", mp3Path);
++    pid_t pid = fork();
++    if (pid < 0) {
++        close(pipefd[0]);
++        close(pipefd[1]);
++        return 120.0;
++    }
++
++    if (pid == 0) {
++        close(pipefd[0]);
++        dup2(pipefd[1], STDOUT_FILENO);
++        close(pipefd[1]);
++        freopen("/dev/null", "w", stderr);
++        char* argv[] = { "aubio", "tempo", mp3Path, NULL };
++        execvp(argv[0], argv);
++        _exit(127);
++    }
+ 
+-    FILE* fp = popen(cmd, "r");
++    close(pipefd[1]);
++    FILE* fp = fdopen(pipefd[0], "r");
+     if (!fp) {
++        close(pipefd[0]);
++        waitpid(pid, NULL, 0);
+         return 120.0;
+     }
+ 
+@@ -240,6 +277,7 @@ float GetBpmFromAubio(char* mp3Path) {
+         }
+     }
+ 
+-    pclose(fp);
++    fclose(fp);
++    waitpid(pid, NULL, 0);
+     return bpm;
+ }

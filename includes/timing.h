@@ -1,5 +1,5 @@
-#ifndef PARSING_H
-#define PARSING_H
+#ifndef TIMING_H
+#define TIMING_H
 
 #include <stddef.h>
 
@@ -15,11 +15,11 @@ int FindCurrentLineValue(long int CurrentTime, long int* LineResetTimeStamps, in
 int FindCurrentWordValue(long int CurrentTime, int* WordTimeStamps, int TotalWordsHuman);
 
 // Buffer operations
-void UpdateBufferWords(char* Buffer, char* Word);
+void UpdateBufferWords(char* Buffer, size_t BufferSize, char* Word);
 
 // Parsing functions
 long int* SeparateTimeStamps(char** lyrics, int TotalLinesHuman);
-int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman);
+int* CalculateLineTimeLengths(long int* LineResetTimeStamps, int TotalLinesHuman, long int TotalTime);
 
 // BPM detection
 int CheckAubioExists(void);
